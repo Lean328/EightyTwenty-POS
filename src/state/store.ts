@@ -1,0 +1,267 @@
+// The till's state container. Holds the working copy of shared records plus this device's session,
+// applies changes synchronously, persists them, and sends every business change to the backend as a command.
+import type { AppConfig } from '../config/env';
+import { hasPermission, sanitizeRoles } from '../domain/permissions';
+import type { AuditEntry, Permission, StaffMember } from '../domain/types';
+import { readJSON, writeJSON } from '../lib/storage';
+import { stamp, uid } from '../lib/ids';
+import type { PosBackend, PosSnapshot } from '../services/contracts';
+import type { PosCommand } from '../services/commands';
+import type { DeviceHub } from '../services/devices';
+import { ApiError } from '../services/http/httpClient';
+import type { Outbox } from '../services/outbox';
+import { readCachedSnapshot, writeCachedSnapshot } from '../services/recordCache';
+import type { OpsUi, Patch, PosState } from './types';
+import { initialState, sessionKeys, snapshotFromState, stateFromSnapshot, type SessionState } from './snapshot';
+
+export interface StoreDeps {
+  backend: PosBackend;
+  devices: DeviceHub;
+  outbox: Outbox;
+  config: AppConfig;
+}
+
+const SESSION_KEY = 'session';
+const ORDER_SEQ_KEY = 'order-seq';
+const RECORD_KEYS = [
+  'orders',
+  'customers',
+  'giftcards',
+  'reservations',
+  'catering',
+  'staff',
+  'roles',
+  'stock',
+  'stockLog',
+  'audit',
+  'shift',
+  'shifts',
+  'soldOut',
+  'branchOff',
+  'unavailableMods',
+  'availSync',
+  'prices',
+  'catOrder',
+  'loy',
+  'rules',
+  'toggles',
+  'cafeFields',
+  'devices',
+  'conflicts',
+  'syncLog',
+] as const satisfies readonly (keyof PosState)[];
+
+export class PosStore {
+  private st: PosState;
+  private listeners = new Set<() => void>();
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private persisted: Partial<PosState> = {};
+  private persistStopped = false;
+  private orderSeq = 0;
+  private debounced = new Map<string, { timer: ReturnType<typeof setTimeout>; command: PosCommand }>();
+  readonly backend: PosBackend;
+  readonly devices: DeviceHub;
+  readonly outbox: Outbox;
+  readonly config: AppConfig;
+
+  constructor(deps: StoreDeps) {
+    this.backend = deps.backend;
+    this.devices = deps.devices;
+    this.outbox = deps.outbox;
+    this.config = deps.config;
+    const session = readJSON<Partial<SessionState>>(SESSION_KEY, {});
+    this.st = initialState(session, deps.devices.initialStates());
+    // Only re-render when the visible offline queue actually changes.
+    this.outbox.subscribe(() => {
+      const queue = this.queueFromOutbox();
+      const cur = this.st.queue;
+      if (queue.length !== cur.length || queue.some((q, i) => q.id !== cur[i].id)) this.setState({ queue });
+    });
+  }
+
+  // ---------- external store protocol (useSyncExternalStore) ----------
+
+  get state(): PosState {
+    return this.st;
+  }
+  getSnapshot = (): PosState => this.st;
+  subscribe = (fn: () => void): (() => void) => {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  };
+
+  setState(p: Patch | ((s: PosState) => Patch | null | undefined)): void {
+    const patch = typeof p === 'function' ? p(this.st) : p;
+    if (!patch) return;
+    this.st = { ...this.st, ...patch };
+    this.schedulePersist();
+    this.listeners.forEach((l) => l());
+  }
+
+  /** Update back-office UI state. */
+  setOps(p: Partial<OpsUi> | ((ops: OpsUi, s: PosState) => Partial<OpsUi>)): void {
+    this.setState((s) => ({ ops: { ...s.ops, ...(typeof p === 'function' ? p(s.ops, s) : p) } }));
+  }
+
+  // ---------- lifecycle ----------
+
+  async load(signal?: AbortSignal): Promise<void> {
+    this.setState({ phase: 'loading', loadError: '' });
+    let snap: PosSnapshot;
+    let offlineSince: string | null = null;
+    try {
+      snap = await this.backend.loadSnapshot({ signal });
+    } catch (e) {
+      if (signal?.aborted) return;
+      const cached = this.backend.kind === 'http' ? readCachedSnapshot() : null;
+      if (cached && e instanceof ApiError && e.retryable) {
+        snap = cached.snapshot;
+        offlineSince = cached.savedAt;
+      } else {
+        this.setState({ phase: 'error', loadError: e instanceof Error ? e.message : String(e) });
+        return;
+      }
+    }
+    const session = readJSON<Partial<SessionState>>(SESSION_KEY, {});
+    const next = stateFromSnapshot(this.st, snap, session);
+    this.orderSeq = Math.max(readJSON<number>(ORDER_SEQ_KEY, 0), ...next.orders.map((o) => +(o.id.split('-').pop() || 0) || 0));
+    const online = offlineSince ? false : this.backend.kind === 'http' ? navigator.onLine : next.online;
+    this.st = { ...next, offlineSince, online, queue: this.queueFromOutbox() };
+    this.persisted = { ...this.st };
+    this.listeners.forEach((l) => l());
+  }
+
+  /** Stop writing to this device's storage (used before clearing development data). */
+  stopPersisting(): void {
+    this.persistStopped = true;
+  }
+
+  /** Write pending changes now (page hide / unload). */
+  flushPersistence(): void {
+    this.flushDebounced();
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = null;
+    this.persist();
+  }
+
+  private schedulePersist(): void {
+    if (this.st.phase !== 'ready' || this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.persist();
+    }, 250);
+  }
+
+  private persist(): void {
+    if (this.st.phase !== 'ready' || this.persistStopped) return;
+    const s = this.st,
+      p = this.persisted;
+    if (RECORD_KEYS.some((k) => s[k] !== p[k])) writeCachedSnapshot(snapshotFromState(s));
+    if (sessionKeys.some((k) => s[k] !== p[k])) writeJSON(SESSION_KEY, Object.fromEntries(sessionKeys.map((k) => [k, s[k]])));
+    this.persisted = { ...s };
+  }
+
+  private queueFromOutbox(): PosState['queue'] {
+    return this.outbox.pending
+      .filter((e) => e.label)
+      .map((e) => ({
+        id: e.id,
+        kind: e.command.type === 'payment.record' ? ('payment' as const) : ('order' as const),
+        orderId: 'orderId' in e.command ? e.command.orderId : 'order' in e.command ? e.command.order.id : '',
+        label: e.label || '',
+        at: stamp(new Date(e.at)),
+      }));
+  }
+
+  // ---------- shared helpers used by actions and views ----------
+
+  /** Queue a change for the backend. `label` shows it in the till's offline queue. */
+  send(command: PosCommand, label?: string): void {
+    this.outbox.enqueue(command, label);
+  }
+
+  /** Coalesce rapid edits (typing in a field) into one command per key. */
+  sendDebounced(key: string, command: PosCommand, ms = 800): void {
+    const prev = this.debounced.get(key);
+    if (prev) clearTimeout(prev.timer);
+    const timer = setTimeout(() => {
+      this.debounced.delete(key);
+      this.send(command);
+    }, ms);
+    this.debounced.set(key, { timer, command });
+  }
+
+  private flushDebounced(): void {
+    this.debounced.forEach(({ timer, command }) => {
+      clearTimeout(timer);
+      this.send(command);
+    });
+    this.debounced.clear();
+  }
+
+  say(msg: string): void {
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.setState({ toast: msg });
+    this.toastTimer = setTimeout(() => this.setState({ toast: null }), 2400);
+  }
+
+  nextOrderNo(): string {
+    this.orderSeq += 1;
+    writeJSON(ORDER_SEQ_KEY, this.orderSeq);
+    return `#8020-${this.orderSeq}`;
+  }
+
+  staff(): StaffMember {
+    const s = this.st;
+    return s.staff.find((x) => x.id === s.staffId) || s.staff[0];
+  }
+
+  roles() {
+    return sanitizeRoles(this.st.roles);
+  }
+
+  /** False until a staff member has signed in with their PIN. */
+  get signedIn(): boolean {
+    return !!this.st.staffId && this.st.staff.some((x) => x.id === this.st.staffId);
+  }
+
+  can(perm: Permission): boolean {
+    if (!this.signedIn) return false;
+    return hasPermission(this.roles()[this.staff().role].perms, perm);
+  }
+
+  roleLabel(staff: StaffMember): string {
+    return this.roles()[staff.role].label;
+  }
+
+  location(id: string) {
+    return this.st.catalog.locations.find((l) => l.id === id);
+  }
+
+  logAudit(action: string, detail: string, x: { reason?: string; approver?: string; amount?: number | null; area?: string } = {}): void {
+    const st = this.staff();
+    const e: AuditEntry = {
+      id: uid('A'),
+      at: stamp(),
+      ts: Date.now(),
+      staff: st.name,
+      role: this.roleLabel(st),
+      action,
+      detail,
+      reason: x.reason || '',
+      approver: x.approver || '',
+      amount: x.amount == null ? null : x.amount,
+      area: x.area || 'Orders',
+      cafe: this.st.cafe,
+    };
+    this.setState((s) => ({ audit: [e, ...(s.audit || [])].slice(0, 400) }));
+    this.send({ type: 'audit.append', entry: e });
+  }
+
+  /** Run fn(approver | null) now if the signed-in staff member may, otherwise ask for a manager PIN first. */
+  approve(perm: Permission, title: string, body: string, fn: (approver: StaffMember | null) => void): void {
+    if (this.can(perm)) return fn(null);
+    this.setState({ dlg: { kind: 'pin', pin: '', title, body, perm, next: (st) => fn(st) } });
+  }
+}

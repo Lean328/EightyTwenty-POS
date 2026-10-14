@@ -1,0 +1,104 @@
+@import '../assets/fonts/fonts.css';
+
+/* Base styles from the approved EightyTwenty POS design. Component styles are inline, as approved. */
+html,
+body {
+  margin: 0;
+  background: #f7f2ea;
+  color: #2c1a12;
+  font-family: Figtree, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  height: 100%;
+}
+* {
+  box-sizing: border-box;
+  scrollbar-width: none;
+}
+a {
+  color: #2c1a12;
+  text-decoration: none;
+}
+a:hover {
+  color: #8b5827;
+}
+button {
+  font-family: inherit;
+  color: #2c1a12;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    opacity 0.12s ease,
+    background 0.15s ease;
+}
+button:active {
+  transform: scale(0.985);
+  opacity: 0.9;
+}
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: 14px;
+  color: #2c1a12;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid #b67a4b;
+  outline-offset: 1px;
+}
+input::placeholder,
+textarea::placeholder {
+  color: #9a8b80;
+}
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Hover states (must win over inline styles, as in the approved build). */
+.hover-accent-border:hover {
+  border-color: rgba(182, 122, 75, 0.45) !important;
+}
+.hover-underline:hover {
+  text-decoration: underline !important;
+}
