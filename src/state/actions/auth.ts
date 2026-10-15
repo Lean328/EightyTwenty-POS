@@ -16,14 +16,16 @@ export function isLocked(store: PosStore, id: string): boolean {
   return !!(g && !g.some((p) => store.can(p)));
 }
 
+/** PIN sign-in that cannot be dismissed. A kitchen display device needs a PIN with kitchen access. */
 export function requireSignIn(store: PosStore): void {
+  const kitchen = store.state.device.mode === 'kitchen';
   store.setState({
     dlg: {
       kind: 'pin',
       pin: '',
-      title: 'Sign in',
-      body: 'Enter your 4-digit PIN to start using the till.',
-      perm: 'pos',
+      title: kitchen ? 'Kitchen sign in' : 'Sign in',
+      body: kitchen ? 'Enter your 4-digit PIN to open the kitchen display.' : 'Enter your 4-digit PIN to start using the till.',
+      perm: kitchen ? 'kitchen' : 'pos',
       required: true,
       next: (st) => {
         store.setState({ staffId: st.id, dlg: null });
@@ -42,6 +44,8 @@ export function closeDialog(store: PosStore): void {
 /** Apply the current location hash: route, sub-route and the permission gate. */
 export function onRoute(store: PosStore): void {
   const s = store.state;
+  // A kitchen display has no till or back-office routes.
+  if (s.device.mode === 'kitchen') return;
   const parts = location.hash.replace('#', '').split('/');
   let r = (parts[0] || 'till') as Route;
   if (r !== 'till' && !(r in SECTIONS)) r = 'till';

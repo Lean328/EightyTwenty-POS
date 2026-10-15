@@ -29,6 +29,7 @@ import type {
   OrderStatus,
   Payment,
   Permission,
+  PrepStatus,
   PromoCode,
   ReportsData,
   Reservation,
@@ -103,6 +104,16 @@ export interface OrdersService {
   create(order: Order, opts?: RequestOptions): Promise<void>;
   setStatus(orderId: string, status: OrderStatus, note: string, opts?: RequestOptions): Promise<void>;
   accept(orderId: string, opts?: RequestOptions): Promise<void>;
+  /**
+   * Kitchen display progress: the preparation state of each line and the order status they imply
+   * (ready only when every line at every station is ready). The backend should reject a change to an order
+   * that is no longer live (cancelled, refunded, completed) with a conflict.
+   */
+  setPrep(
+    orderId: string,
+    change: { lines: { key: string; prep: PrepStatus }[]; status: OrderStatus; note: string },
+    opts?: RequestOptions,
+  ): Promise<void>;
   /** Refund, void or cancellation, with the order's resulting lines and total. */
   adjust(
     orderId: string,

@@ -137,6 +137,49 @@ export function Settings({ o }: { o: SettingsView }) {
             gap: '10px',
           }}
         >
+          <h2 style={{ margin: 0, font: '500 17px/1 Newsreader,serif' }}>This device</h2>
+          <p style={{ margin: 0, font: '600 13px/1.3 Figtree' }}>
+            {o.thisDevice.mode}
+            <span style={{ display: 'block', font: '400 11px/1.3 Figtree', color: '#8C7A6E' }}>{o.thisDevice.setBy}</span>
+          </p>
+          <p style={{ margin: 0, font: '400 12px/1.4 Figtree', color: '#8C7A6E' }}>
+            Use this screen as the kitchen display for the café. It opens the kitchen display every time it starts, and kitchen staff sign
+            in with their own PIN.{o.thisDevice.needsPin ? ' Needs a manager PIN.' : ''}
+          </p>
+          <div style={{ display: 'grid', gap: '6px' }}>
+            {o.thisDevice.kitchenOptions.map((k) => (
+              <button
+                key={k.id}
+                type="button"
+                onClick={k.pick}
+                style={{
+                  height: '38px',
+                  padding: '0 12px',
+                  borderRadius: '9px',
+                  border: '1px solid rgba(44,26,18,.14)',
+                  background: 'transparent',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  font: '500 13px/1 Figtree',
+                }}
+              >
+                Kitchen display · {k.label}
+                <span style={{ color: '#8B5827' }}>→</span>
+              </button>
+            ))}
+          </div>
+        </section>
+        <section
+          style={{
+            padding: '18px 20px',
+            borderRadius: '16px',
+            background: '#FFFCF7',
+            border: '1px solid rgba(44,26,18,.06)',
+            display: 'grid',
+            gap: '10px',
+          }}
+        >
           <h2 style={{ margin: 0, font: '500 17px/1 Newsreader,serif' }}>Hardware</h2>
           <p style={{ margin: 0, font: '400 12px/1.4 Figtree', color: '#8C7A6E' }}>
             Simulated devices — change a status to test failure and retry flows. No physical hardware is connected in this prototype.

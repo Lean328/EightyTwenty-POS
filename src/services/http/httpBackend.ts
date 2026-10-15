@@ -17,6 +17,7 @@ export function createHttpBackend(http: HttpClient): PosBackend {
       create: (order, opts) => http.post(`/pos/v1/orders`, order, opts),
       setStatus: (id, status, note, opts) => http.post(`/pos/v1/orders/${enc(id)}/status`, { status, note }, opts),
       accept: (id, opts) => http.post(`/pos/v1/orders/${enc(id)}/accept`, {}, opts),
+      setPrep: (id, change, opts) => http.put(`/pos/v1/orders/${enc(id)}/preparation`, change, opts),
       adjust: (id, change, opts) => http.post(`/pos/v1/orders/${enc(id)}/adjustments`, change, opts),
       setTables: (id, tables, opts) => http.put(`/pos/v1/orders/${enc(id)}/tables`, tables, opts),
     },

@@ -56,17 +56,22 @@ export function resolveConflict(store: PosStore, id: string): void {
   store.logAudit('Sync conflict resolved', id, { area: 'Sync' });
 }
 
-/** Pick up website and app orders that arrived at the backend (http provider only). */
+/**
+ * Pick up order changes from the backend (http provider only): website and app orders, and changes made on other
+ * devices such as the kitchen display marking an order ready.
+ */
 export async function pullRemoteOrders(store: PosStore, cursor: string | null): Promise<string | null> {
   if (!store.state.online || store.backend.kind !== 'http') return cursor;
   try {
     const res = await store.backend.orders.listChanged(store.state.cafe, cursor);
+    store.setState({ orderFeed: { ok: true, at: new Date().toISOString() } });
     if (res.orders.length) {
       const pendingIds = new Set(
         store.outbox.pending.flatMap((e) =>
           'orderId' in e.command ? [e.command.orderId] : 'order' in e.command ? [e.command.order.id] : [],
         ),
       );
+      const before = new Map(store.state.orders.map((o) => [o.id, o.status]));
       store.setState((s) => {
         const byId = new Map(s.orders.map((o) => [o.id, o]));
         // Orders with changes still waiting in this till's outbox keep the local version until delivered.
@@ -76,9 +81,16 @@ export async function pullRemoteOrders(store: PosStore, cursor: string | null): 
         const incoming = res.orders.filter((o) => !s.orders.some((x) => x.id === o.id));
         return { orders: [...incoming, ...s.orders.map((o) => byId.get(o.id) || o)] };
       });
+      // Front counter: tell staff when the kitchen has finished an order.
+      const ready = res.orders.filter(
+        (o) => o.status === 'ready' && before.has(o.id) && before.get(o.id) !== 'ready' && !pendingIds.has(o.id),
+      );
+      if (ready.length && store.state.device.mode === 'counter')
+        store.say(ready.length === 1 ? `${ready[0].id} is ready for pickup` : `${ready.length} orders are ready for pickup`);
     }
     return res.cursor;
   } catch {
+    store.setState({ orderFeed: { ok: false, at: store.state.orderFeed?.at || '' } });
     return cursor;
   }
 }
