@@ -1,7 +1,8 @@
 # EightyTwenty POS
 
 Point of sale for EightyTwenty cafés: till and new orders, orders & kitchen, dashboard, reservations, catering,
-customers, loyalty, gift cards, inventory & menu, reports, staff & roles and settings.
+customers, loyalty, gift cards, inventory & menu, reports, staff & roles and settings — plus a dedicated **kitchen
+display** for kitchen and barista screens.
 
 React 19 + TypeScript, built with Vite. No runtime dependencies besides React.
 
@@ -26,6 +27,31 @@ Cashier `1111`.
 
 Development builds also show simulators (mock website/app orders, connection loss, simulated card terminal and
 printers). They are labelled "simulated" and never exist in builds that use the real backend.
+
+## Kitchen display
+
+Any device can run as a **front counter** till (the default) or as a full-screen **kitchen display** for kitchen and
+barista staff. Both use the same orders and the same command outbox — there is no separate kitchen order store.
+
+Setting up a kitchen device:
+
+1. On the device, sign in at the till and open **Settings → This device**.
+2. Choose **Kitchen display · All stations**, **Food · Kitchen** or **Drinks · Barista**. A manager PIN is needed
+   unless the person signed in has the _Set this device to front counter or kitchen display_ permission (managers
+   and admins by default).
+3. The device now opens the kitchen display every time it starts. Kitchen staff sign in with their own PIN (the
+   _Use the kitchen display_ permission — cashiers, managers and admins by default). **Lock · switch staff** signs
+   the current person out.
+4. To return the device to the counter: kitchen display settings → **Switch to front counter** (manager PIN).
+
+On the kitchen display, tickets run **Not started → Preparing → Ready** per station, and individual items can be
+ticked off. A mixed food-and-drinks order becomes ready only when every item at every station is ready, which the
+front counter sees as the order's status. Website and app orders must be paid and accepted before they can be
+started. Tickets show timers (running late / overdue), dietary and allergy alerts (item adjustments, notes and the
+customer's dietary profile), removed items and cancellations; a sound plays for new tickets (mute in the header).
+In development, the kitchen display settings include simulators for website / app orders, failed payments and
+connection loss. With local data everything stays in one browser — real cross-device updates need the backend (see
+[docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)).
 
 ## Scripts
 
@@ -85,8 +111,8 @@ src/
                device (terminal/printer/drawer) contracts, offline record cache
   state/       Store (state container), snapshot mapping, actions (orders, payments, shifts, tables,
                sync, catalogue, auth, till)
-  features/    Screens: shell/navigation, till, dialogs, back office (ops). Each screen has a typed
-               view-model builder (*.view.ts) and a presentational component (*.tsx)
+  features/    Screens: shell/navigation, till, dialogs, back office (ops), kitchen display. Each screen has a
+               typed view-model builder (*.view.ts) and a presentational component (*.tsx)
   dev/         DEVELOPMENT ONLY: local backend, sample data, device simulator, website/app simulations
   app/         Bootstrap, error boundary, loading / error / configuration screens
   assets/fonts Self-hosted Newsreader and Figtree (SIL OFL)
@@ -108,7 +134,9 @@ docs/          Integration status, cleanup report, validation results
 - **Permissions:** checked in the UI (section gates and manager-PIN approval for refunds, discounts ≥ 50%,
   cash out, variance, and back-office edits). The backend must enforce the same rules.
 - **Offline:** cash sales and kitchen orders continue offline and queue for sync; card, wallet and gift card
-  payments pause.
+  payments pause. The kitchen display keeps working offline and queues its ticket updates the same way.
+- **Device mode:** front counter or kitchen display is stored on the device (`et-pos:v2:session`) and recorded in
+  the audit log when a manager changes it.
 
 See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for the API contract and what is still to be connected, and
 [docs/CLEANUP_REPORT.md](docs/CLEANUP_REPORT.md) for what changed from the prototype.

@@ -13,6 +13,7 @@ import type {
   OrderLine,
   OrderStatus,
   Payment,
+  PrepStatus,
   Reservation,
   RoleId,
   RoleMatrix,
@@ -23,6 +24,7 @@ export type PosCommand =
   | { type: 'order.create'; order: Order }
   | { type: 'order.status'; orderId: string; status: OrderStatus; note: string }
   | { type: 'order.accept'; orderId: string }
+  | { type: 'order.prep'; orderId: string; lines: { key: string; prep: PrepStatus }[]; status: OrderStatus; note: string }
   | { type: 'order.adjust'; orderId: string; adjustment: OrderAdjustment; lines: OrderLine[]; total: number; status: OrderStatus }
   | { type: 'order.tables'; orderId: string; table?: string; tables: string[]; cleared?: boolean }
   | { type: 'payment.record'; orderId: string; payment: Payment }
@@ -56,6 +58,8 @@ export function dispatchCommand(b: PosBackend, c: PosCommand, opts: RequestOptio
       return b.orders.setStatus(c.orderId, c.status, c.note, opts);
     case 'order.accept':
       return b.orders.accept(c.orderId, opts);
+    case 'order.prep':
+      return b.orders.setPrep(c.orderId, { lines: c.lines, status: c.status, note: c.note }, opts);
     case 'order.adjust':
       return b.orders.adjust(c.orderId, { adjustment: c.adjustment, lines: c.lines, total: c.total, status: c.status }, opts);
     case 'order.tables':

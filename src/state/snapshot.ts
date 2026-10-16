@@ -2,7 +2,7 @@
 import { sanitizeRoles, DEFAULT_ROLES } from '../domain/permissions';
 import type { DeviceStates } from '../domain/types';
 import type { PosSnapshot } from '../services/contracts';
-import type { OpsUi, PosState } from './types';
+import type { DeviceSetup, OpsUi, PosState } from './types';
 
 /** Keys saved per device (cart in progress, parked orders, who is signed in, layout). */
 export const sessionKeys = [
@@ -18,9 +18,27 @@ export const sessionKeys = [
   'cafe',
   'navOpen',
   'online',
+  'device',
 ] as const satisfies readonly (keyof PosState)[];
 
 export type SessionState = Pick<PosState, (typeof sessionKeys)[number]>;
+
+/** A device that has never been set up is a front counter till. */
+export const DEFAULT_DEVICE: DeviceSetup = { mode: 'counter', station: 'all', muted: false, by: '', at: '' };
+
+const STATION_FILTERS: readonly string[] = ['all', 'kitchen', 'bar'];
+
+/** Saved device setup, ignoring anything unrecognised. */
+function deviceFrom(saved: Partial<DeviceSetup> | undefined): DeviceSetup {
+  if (!saved || typeof saved !== 'object') return DEFAULT_DEVICE;
+  return {
+    mode: saved.mode === 'kitchen' ? 'kitchen' : 'counter',
+    station: STATION_FILTERS.includes(saved.station as string) ? (saved.station as DeviceSetup['station']) : 'all',
+    muted: saved.muted === true,
+    by: typeof saved.by === 'string' ? saved.by : '',
+    at: typeof saved.at === 'string' ? saved.at : '',
+  };
+}
 
 export const initialOps = (): OpsUi => ({
   cafe: 'all',
@@ -57,6 +75,7 @@ export function initialState(session: Partial<SessionState>, devices: DeviceStat
     phase: 'loading',
     loadError: '',
     offlineSince: null,
+    orderFeed: null,
     catalog: { locations: [], categories: [], menu: [], menuById: {}, cateringPackages: [], tables: [], promotions: [] },
     reports: null,
     loyaltyCopy: { reward: '', eligible: '' },
@@ -87,6 +106,7 @@ export function initialState(session: Partial<SessionState>, devices: DeviceStat
     queue: [],
     conflicts: [],
     syncLog: [],
+    device: deviceFrom(session.device),
     route: 'till',
     sub: '',
     navOpen: session.navOpen != null ? session.navOpen : wide() >= 1280,

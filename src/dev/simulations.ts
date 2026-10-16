@@ -69,6 +69,7 @@ export function simulateInbound(store: PosStore, kind: 'web' | 'app' | 'dup' | '
     accepted: false,
     cafe: s.cafe,
     time: nowHM(),
+    placedAt: new Date().toISOString(),
     lines,
     total,
     paid: true,

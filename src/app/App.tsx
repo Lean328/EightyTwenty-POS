@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Shell } from '../features/shell/Shell';
-import { loadOpsScreen } from '../features/shell/lazyScreens';
+import { loadKitchenScreen, loadOpsScreen } from '../features/shell/lazyScreens';
 import { closeDialog, onRoute, requireSignIn } from '../state/actions/auth';
 import { pullRemoteOrders, runSync, setOnline } from '../state/actions/sync';
 import type { PosStore } from '../state/store';
@@ -10,13 +10,18 @@ import { StoreContext, useStore } from './storeContext';
 import { BackendConnectionCheck } from './BackendConnectionCheck';
 
 const ORDER_POLL_MS = 15_000;
+/** Kitchen displays check for new and changed orders more often. */
+const KITCHEN_POLL_MS = 5_000;
+
+const KitchenDisplay = lazy(loadKitchenScreen);
 
 /** Start trading once the snapshot is loaded: route, sign-in, and delivery of anything queued on this till. */
 function start(store: PosStore): void {
-  // Load the back office in the background so it is in memory before any connection drop.
-  setTimeout(() => void loadOpsScreen().catch(() => {}), 1500);
+  const kitchen = store.state.device.mode === 'kitchen';
+  // Load the screen this device uses in the background so it is in memory before any connection drop.
+  setTimeout(() => void (kitchen ? loadKitchenScreen() : loadOpsScreen()).catch(() => {}), kitchen ? 0 : 1500);
   onRoute(store);
-  if (!store.signedIn) requireSignIn(store);
+  if (!store.signedIn || (kitchen && !store.can('kitchen'))) requireSignIn(store);
   if (store.state.online) {
     if (store.state.queue.length) void runSync(store);
     else store.outbox.setOnline(true);
@@ -54,12 +59,20 @@ function useGlobalListeners(store: PosStore): void {
     addEventListener('offline', onOffline);
     document.addEventListener('visibilitychange', onVisibility);
 
-    // Website and app orders reach the till through the backend (http provider only).
+    // Website and app orders, and changes from other devices, reach this device through the backend (http provider only).
     let cursor: string | null = null;
+    let lastPull = 0;
+    let pulling = false;
     const poll = realNetwork
       ? setInterval(() => {
-          if (store.state.phase === 'ready') void pullRemoteOrders(store, cursor).then((c) => (cursor = c));
-        }, ORDER_POLL_MS)
+          const every = store.state.device.mode === 'kitchen' ? KITCHEN_POLL_MS : ORDER_POLL_MS;
+          if (store.state.phase !== 'ready' || pulling || Date.now() - lastPull < every - 250) return;
+          lastPull = Date.now();
+          pulling = true;
+          void pullRemoteOrders(store, cursor)
+            .then((c) => (cursor = c))
+            .finally(() => (pulling = false));
+        }, KITCHEN_POLL_MS)
       : null;
 
     return () => {
@@ -95,6 +108,13 @@ function Screens() {
       >
         {loadError || 'The EightyTwenty server did not respond.'} Nothing has been charged. Check the connection and try again.
       </StatusScreen>
+    );
+  // The kitchen display shows its own connection state.
+  if (store.state.device.mode === 'kitchen')
+    return (
+      <Suspense fallback={<StatusScreen title="Opening the kitchen display…" />}>
+        <KitchenDisplay />
+      </Suspense>
     );
   return (
     <>

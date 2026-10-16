@@ -1,6 +1,8 @@
 import type { ChangeEvent } from 'react';
+import { STATION_FILTER_LABEL, type StationFilter } from '../../domain/kitchen';
 import type { BusinessRuleKey, DeviceId, DeviceState, LocationField, TillToggles } from '../../domain/types';
 import { removeKey } from '../../lib/storage';
+import { assignDevice, DEVICE_MODE_LABEL } from '../../state/actions/kitchen';
 import { kickDrawer } from '../../state/actions/orders';
 import { setOnline } from '../../state/actions/sync';
 import type { PosStore } from '../../state/store';
@@ -158,6 +160,19 @@ export function buildSettings(store: PosStore) {
       if (store.config.devTools) setOnline(store, !s.online);
     },
     openSync: () => store.setState({ dlg: { kind: 'sync' } }),
+    /** This device: front counter (default) or kitchen display, assigned with the `devices` permission. */
+    thisDevice: {
+      mode: `${DEVICE_MODE_LABEL[s.device.mode]} · ${store.config.terminalId}`,
+      setBy: s.device.by
+        ? `Set by ${s.device.by}${s.device.at ? ' · ' + new Date(s.device.at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : ''}`
+        : 'Not set up yet — every device starts as a front counter till.',
+      needsPin: !store.can('devices'),
+      kitchenOptions: (['all', 'kitchen', 'bar'] as StationFilter[]).map((st) => ({
+        id: st,
+        label: STATION_FILTER_LABEL[st],
+        pick: () => assignDevice(store, 'kitchen', st),
+      })),
+    },
     integrations,
     /** Development only: clear this browser's local data and reload the sample data. */
     canResetDemo: store.backend.kind === 'local' && store.config.devTools,

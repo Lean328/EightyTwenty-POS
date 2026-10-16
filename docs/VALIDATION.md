@@ -1,5 +1,33 @@
 # Validation results
 
+## Kitchen display update — 15 Oct 2026
+
+Windows 11, Node 24, npm 11. All results below are from actual runs.
+
+| Step                 | Result                                                                                                                                                                                                                        |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tsc -b`             | 0 errors                                                                                                                                                                                                                      |
+| `eslint .`           | 0 problems                                                                                                                                                                                                                    |
+| `prettier --check .` | all kitchen display changes formatted; 4 files under `src/services/http/` (`authSession.ts`, `httpClient.ts`, `posCatalog.ts`, `posMapping.ts`) were already unformatted on `main` before this change and were left untouched |
+| `vitest run`         | **10 files, 93 tests passed** (the 59 existing tests unchanged, plus 34 kitchen display tests)                                                                                                                                |
+| `vite build`         | succeeded; the kitchen display is its own chunk (`KitchenDisplay-*.js`, 31 kB / 9 kB gzip), loaded only on kitchen devices                                                                                                    |
+
+Kitchen display tests: station routing and menu-item override; line state derivation; mixed orders ready only when every
+station is ready; eligibility (failed payment, awaiting acceptance, unpaid online orders, till open tabs); timers and
+midnight roll-over; dietary and allergy detection; voided items; per-station boards and the "waiting on Kitchen" rail;
+duplicate taps (including a double tap landing on the button that replaced the first) and stale screens; recall;
+cancellations and amendments raising alerts; new-ticket detection; offline queueing and delivery; order-feed failure
+("Reconnecting"); front counter told when an order turns ready; device assignment with manager PIN, persistence and
+audit; kitchen PIN access and refusal; front counter sign-in unchanged; rendered app: a kitchen device asks for a kitchen
+PIN, runs a ticket to ready and recall, station filter, tablet layout, back-office links ignored.
+
+Browser (dev server, Chrome, 1280 × 800 and 768 × 1024): front counter sign-in and Settings → This device; assigning
+the kitchen display; mixed tickets per station; item ticks; double tap ignored; Drinks view; simulated website order
+(new, awaiting acceptance) and failed payment (blocked); offline banner, queued update and delivery on reconnect;
+reload keeps kitchen mode and ticket states; switch back to the front counter. No console errors.
+
+---
+
 Run on 10 Oct 2026, Windows 11, Node 24.18, npm 11.16. All results below are from actual runs.
 
 ## `npm install`

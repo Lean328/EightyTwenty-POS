@@ -1,4 +1,5 @@
 // Application state for one till session.
+import type { StationFilter } from '../domain/kitchen';
 import type {
   AppliedGiftCard,
   AuditEntry,
@@ -57,6 +58,20 @@ export type SectionRoute = keyof typeof SECTIONS;
 export type Route = 'till' | SectionRoute;
 export type TillView = 'till' | 'orders' | 'tables' | 'kitchen' | 'held';
 export type MenuFilter = 'all' | 'featured' | 'vegan' | 'gf' | 'df';
+
+/** What this device is used for. Assigned by a manager and remembered on the device. */
+export type DeviceMode = 'counter' | 'kitchen';
+
+export interface DeviceSetup {
+  mode: DeviceMode;
+  /** Kitchen display: which station's items this screen shows. */
+  station: StationFilter;
+  /** Kitchen display: new-order sound off. */
+  muted: boolean;
+  /** Who assigned the mode, and when (ISO). Empty for a device never set up. */
+  by: string;
+  at: string;
+}
 
 export interface Catalog {
   locations: Location[];
@@ -207,6 +222,8 @@ export interface PosState {
   loadError: string;
   /** Set when the till started from its saved copy because the server could not be reached. */
   offlineSince: string | null;
+  /** Order changes from the backend (http provider only): did the last fetch work, and when the last one that did (ISO). */
+  orderFeed: { ok: boolean; at: string } | null;
 
   catalog: Catalog;
   reports: ReportsData | null;
@@ -244,6 +261,7 @@ export interface PosState {
   syncLog: SyncLogEntry[];
 
   // session (this device)
+  device: DeviceSetup;
   route: Route;
   sub: string;
   navOpen: boolean;

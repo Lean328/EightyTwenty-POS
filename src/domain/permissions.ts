@@ -5,7 +5,10 @@ import type { Permission, RoleId, RoleMatrix } from './types';
 export const ROLE_IDS: RoleId[] = ['cashier', 'manager', 'admin'];
 
 export const DEFAULT_ROLES: RoleMatrix = {
-  cashier: { label: 'Cashier', perms: ['pos', 'orders', 'reservations.view', 'customers.view', 'loyalty.stamp', 'gift.redeem'] },
+  cashier: {
+    label: 'Cashier',
+    perms: ['pos', 'orders', 'reservations.view', 'customers.view', 'loyalty.stamp', 'gift.redeem', 'kitchen'],
+  },
   manager: {
     label: 'Manager',
     perms: [
@@ -22,6 +25,8 @@ export const DEFAULT_ROLES: RoleMatrix = {
       'reports',
       'staff.view',
       'settings.view',
+      'kitchen',
+      'devices',
     ],
   },
   admin: { label: 'Admin', perms: ['*'] },
@@ -41,6 +46,8 @@ export const PERMISSIONS: [Permission, string][] = [
   ['reports', 'View reports'],
   ['staff', 'Manage staff & roles'],
   ['settings', 'Change settings'],
+  ['kitchen', 'Use the kitchen display'],
+  ['devices', 'Set this device to front counter or kitchen display'],
 ];
 
 const KNOWN = new Set<string>([

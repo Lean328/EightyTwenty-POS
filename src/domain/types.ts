@@ -11,6 +11,10 @@ export type Channel = 'pos' | 'web' | 'app';
 export type RecordSource = Channel;
 export type OrderType = 'dinein' | 'pickup' | 'takeaway' | 'delivery';
 export type OrderStatus = 'new' | 'preparing' | 'ready' | 'completed' | 'refunded' | 'cancelled' | 'failed';
+/** Preparation state of one order line on the kitchen display. */
+export type PrepStatus = 'new' | 'preparing' | 'ready';
+/** Where a line is prepared: food in the kitchen, drinks at the coffee / drinks bar. */
+export type Station = 'kitchen' | 'bar';
 export type PaymentMethod = 'cash' | 'card' | 'wallet' | 'gift' | 'reward';
 export type RoleId = 'cashier' | 'manager' | 'admin';
 export type ReservationStatus = 'pending' | 'confirmed' | 'completed' | 'cancelled';
@@ -68,6 +72,8 @@ export interface MenuItem {
   desc: string;
   mods: ModifierGroup[];
   featured?: boolean;
+  /** Preparation station. When absent it follows the category (see domain/kitchen.ts). */
+  station?: Station;
 }
 
 export interface CateringPackage {
@@ -107,6 +113,8 @@ export interface OrderLine {
   sel: ModSelection;
   adjust: string[];
   note: string;
+  /** Kitchen display progress for this line. Absent until the kitchen first changes the order (see domain/kitchen.ts). */
+  prep?: PrepStatus;
 }
 
 export interface Payment {
@@ -169,6 +177,8 @@ export interface Order {
   cafe: string;
   /** HH:MM, 24h, café local time. */
   time: string;
+  /** ISO timestamp the order was placed, when known. Kitchen timers fall back to `time`. */
+  placedAt?: string;
   table?: string;
   tables?: string[];
   customerId?: string;
@@ -337,7 +347,9 @@ export type Permission =
   | 'staff'
   | 'staff.view'
   | 'settings'
-  | 'settings.view';
+  | 'settings.view'
+  | 'kitchen'
+  | 'devices';
 
 export interface Role {
   label: string;

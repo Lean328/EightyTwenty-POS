@@ -83,7 +83,15 @@ export function createLocalBackend(): PosBackend {
         reports: REPORTS,
       };
     },
-    orders: { listChanged: async () => ({ orders: [], cursor: '' }), create: ok, setStatus: ok, accept: ok, adjust: ok, setTables: ok },
+    orders: {
+      listChanged: async () => ({ orders: [], cursor: '' }),
+      create: ok,
+      setStatus: ok,
+      accept: ok,
+      setPrep: ok,
+      adjust: ok,
+      setTables: ok,
+    },
     payments: { record: ok },
     catalog: {
       setSoldOut: ok,

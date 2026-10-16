@@ -37,6 +37,7 @@ export function cartToOrder(store: PosStore): { o: Order; giftcards: GiftCard[] 
     accepted: true,
     cafe: s.cafe,
     time: nowHM(),
+    placedAt: new Date().toISOString(),
     table: s.table || undefined,
     tables: s.table ? [s.table] : [],
     customerId: s.customerId || undefined,
