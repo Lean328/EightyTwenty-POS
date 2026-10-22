@@ -52,7 +52,8 @@ export function createHttpBackend(http: HttpClient): PosBackend {
         http.post(`/gift-cards/v1/${enc(code.replace(/\s/g, ''))}/adjustments`, { amount, reason }, opts),
     },
     staffAuth: {
-      verifyPin: (pin, opts) => http.post(`/auth/v1/pin`, { pin }, opts),
+      verifyPin: (pin, opts) =>
+        http.post(`/auth/v1/pin`, { pin, ...(opts?.expectedStaffId ? { expectedStaffId: opts.expectedStaffId } : {}) }, opts),
       createStaff: (profile, pin, opts) => http.post(`/staff/v1`, { ...profile, pin }, opts),
       setRole: (staffId, role, opts) => http.put(`/staff/v1/${enc(staffId)}/role`, { role }, opts),
       setRoleMatrix: (roles, opts) => http.put(`/staff/v1/roles`, roles, opts),

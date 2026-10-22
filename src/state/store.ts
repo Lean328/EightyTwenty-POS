@@ -13,6 +13,7 @@ import type { Outbox } from '../services/outbox';
 import { readCachedSnapshot, writeCachedSnapshot } from '../services/recordCache';
 import type { OpsUi, Patch, PosState } from './types';
 import { initialState, sessionKeys, snapshotFromState, stateFromSnapshot, type SessionState } from './snapshot';
+import { loadPosBootstrap } from '../services/http/posBootstrap';
 
 export interface StoreDeps {
   backend: PosBackend;
@@ -102,6 +103,86 @@ export class PosStore {
   /** Update back-office UI state. */
   setOps(p: Partial<OpsUi> | ((ops: OpsUi, s: PosState) => Partial<OpsUi>)): void {
     this.setState((s) => ({ ops: { ...s.ops, ...(typeof p === 'function' ? p(s.ops, s) : p) } }));
+  }
+
+  async loadBootstrap(): Promise<void> {
+    const data = await loadPosBootstrap();
+  
+    // Frontend dùng slug làm mã chi nhánh trong các API POS.
+    const cafeId = data.location.slug;
+  
+    const location = {
+      id: cafeId,
+      name: data.location.name,
+      address: data.location.address,
+      phone: '',
+      hours: '',
+      hoursShort: '',
+      email: '',
+      tbc: data.location.status !== 'open',
+    };
+  
+    this.setState({
+      catalog: {
+        locations: [location],
+        categories: data.categories,
+        menu: data.menu,
+        menuById: Object.fromEntries(
+          data.menu.map((item) => [item.id, item]),
+        ),
+        cateringPackages: [],
+        tables: [],
+        promotions: [],
+      },
+  
+      cafe: cafeId,
+      cat: data.categories[0]?.id ?? '',
+      catOrder: data.categories.map((category) => category.id),
+  
+      staff: [data.session.staff],
+      staffId: data.session.staff.id,
+  
+      roles: {
+        cashier: { label: 'Cashier', perms: [] },
+        manager: { label: 'Manager', perms: [] },
+        admin: { label: 'Admin', perms: [] },
+        [data.session.staff.role]: {
+          label: data.session.staff.role,
+          perms: data.session.permissions,
+        },
+      },
+  
+      branchOff: {
+        [cafeId]: data.unavailableItemIds,
+      },
+      soldOut: [],
+      prices: {},
+      unavailableMods: [],
+  
+      // Không mang giỏ hàng demo sang phiên dữ liệu thật.
+      lines: [],
+      customerId: null,
+      discount: null,
+      gift: null,
+      table: '',
+      note: '',
+      held: [],
+
+    // Clear records from the previous session before using live data.
+    orders: [],
+    customers: [],
+    giftcards: [],
+    reservations: [],
+    catering: [],
+    stock: [],
+    stockLog: [],
+    audit: [],
+    shift: null,
+    shifts: [],
+    reports: null,
+    selOrder: null,
+    dlg: null,
+    });
   }
 
   // ---------- lifecycle ----------

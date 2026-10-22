@@ -1,3 +1,5 @@
+import { PosPinSignIn } from './PosPinSignIn';
+import type { PosPinSession } from '../services/http/posPinAuth';
 import type { PosStore } from '../state/store';
 import { PosMenuPreview } from './PosMenuPreview';
 import { loadPosCatalog } from '../services/http/posCatalog';
@@ -5,9 +7,11 @@ import type { MenuCategory } from '../domain/types';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 
+import { loadPosBootstrap } from '../services/http/posBootstrap';
+
 import { config } from '../config/env';
 import { clearLocalSession, getAccessToken, signIn } from '../services/http/authSession';
-import { createHttpClient } from '../services/http/httpClient';
+import { ApiError, createHttpClient } from '../services/http/httpClient';
 import type { MenuItem } from '../domain/types';
 interface Location {
   id: string;
@@ -20,6 +24,8 @@ interface LocationsResponse {
 }
 
 export function BackendConnectionCheck({ store }: { store: PosStore }) {
+  const [usePin, setUsePin] = useState(true);
+  const [signedInName, setSignedInName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [locations, setLocations] = useState<Location[]>([]);
@@ -31,6 +37,39 @@ export function BackendConnectionCheck({ store }: { store: PosStore }) {
   const [menuBusy, setMenuBusy] = useState(false);
   const [menuLocation, setMenuLocation] = useState('');
   const [unavailableItemIds, setUnavailableItemIds] = useState<string[]>([]);
+
+  async function pinSignedIn(session: PosPinSession) {
+    setBusy(true);
+    setError('');
+    setConnected(false);
+    setLocations([]);
+    setMenu([]);
+    setCategories([]);
+    setUnavailableItemIds([]);
+    setMenuLocation('');
+    setSignedInName('');
+  
+    try {
+      const data = await loadPosBootstrap();
+  
+      if (data.session.staff.id !== session.staff.id) {
+        throw new Error('Staff session changed. Please sign in again.');
+      }
+  
+      setLocations([data.location]);
+      setSignedInName(data.session.staff.name);
+      setMenu(data.menu);
+      setCategories(data.categories);
+      setUnavailableItemIds(data.unavailableItemIds);
+      setMenuLocation(data.location.slug);
+      setConnected(true);
+    } catch (err) {
+      clearLocalSession();
+      throw err;
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -89,6 +128,12 @@ export function BackendConnectionCheck({ store }: { store: PosStore }) {
       setUnavailableItemIds(catalog.unavailableItemIds);
       setMenuLocation(slug);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        clearLocalSession();
+        setConnected(false);
+        setLocations([]);
+        setSignedInName('');
+      }
       setError(err instanceof Error ? err.message : 'Could not load menu.');
     } finally {
       setMenuBusy(false);
@@ -98,45 +143,81 @@ export function BackendConnectionCheck({ store }: { store: PosStore }) {
   return (
     <main style={{ maxWidth: 480, margin: '60px auto', padding: 24 }}>
       <h1>Backend connection check</h1>
-      <p>Sign in with your local Django account.</p>
+      <p>Staff PIN is verified by Django. Email login is available for diagnostics.</p>
 
-      <form onSubmit={submit}>
-        <label>
-          Email
-          <input
-            type="email"
-            autoComplete="username"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            required
-            disabled={busy}
-            style={{ display: 'block', width: '100%', marginBottom: 16 }}
-          />
-        </label>
+      <button
+        type="button"
+        disabled={busy || menuBusy}
+        onClick={() => {
+          clearLocalSession();
+          setConnected(false);
+          setLocations([]);
+          setMenu([]);
+          setCategories([]);
+          setMenuLocation('');
+          setUsePin(!usePin);
+          setError('');
+          setSignedInName('');
+        }}
+      >
+        {usePin ? 'Use email diagnostics' : 'Use staff PIN'}
+      </button>
+      {usePin ? (
+        !connected && <PosPinSignIn onSignedIn={pinSignedIn} />
+      ) : (
+        <form onSubmit={submit}>
+          <label>
+            Email
+            <input
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              disabled={busy}
+              style={{ display: 'block', width: '100%', marginBottom: 16 }}
+            />
+          </label>
 
-        <label>
-          Password
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            required
-            disabled={busy}
-            style={{ display: 'block', width: '100%', marginBottom: 16 }}
-          />
-        </label>
+          <label>
+            Password
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              disabled={busy}
+              style={{ display: 'block', width: '100%', marginBottom: 16 }}
+            />
+          </label>
 
-        <button type="submit" disabled={busy}>
-          {busy ? 'Connecting…' : 'Sign in and load locations'}
-        </button>
-      </form>
+          <button type="submit" disabled={busy}>
+            {busy ? 'Connecting…' : 'Sign in and load locations'}
+          </button>
+        </form>
+      )}
 
       {error && <p role="alert">{error}</p>}
 
       {connected && (
         <>
-          <p role="status">Connected to Django successfully.</p>
+          <p role="status">Connected to Django successfully. {signedInName && `Signed in as ${signedInName}.`}</p>
+          <button
+            type="button"
+            disabled={busy || menuBusy}
+            onClick={() => {
+              clearLocalSession();
+              setConnected(false);
+              setLocations([]);
+              setMenu([]);
+              setCategories([]);
+              setMenuLocation('');
+              setSignedInName('');
+            }}
+          >
+            Lock / switch staff
+          </button>
           <ul>
             {locations.map((location) => (
               <li key={location.id}>

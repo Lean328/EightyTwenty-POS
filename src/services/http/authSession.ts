@@ -15,11 +15,7 @@ export function clearLocalSession(): void {
   tokens = null;
 }
 
-export async function signIn(
-  baseUrl: string,
-  email: string,
-  password: string,
-): Promise<void> {
+export async function signIn(baseUrl: string, email: string, password: string): Promise<void> {
   clearLocalSession();
 
   const client = createHttpClient({
@@ -28,22 +24,19 @@ export async function signIn(
     terminalId: 'POS-LOGIN',
   });
 
-  const result = await client.post<TokenPair>(
-    '/api/v1/auth/login',
-    {
-      email: email.trim(),
-      password,
-    },
-  );
+  const result = await client.post<TokenPair>('/api/v1/auth/login', {
+    email: email.trim(),
+    password,
+  });
 
-  if (
-    typeof result?.access !== 'string' ||
-    typeof result?.refresh !== 'string' ||
-    !result.access ||
-    !result.refresh
-  ) {
+  if (typeof result?.access !== 'string' || typeof result?.refresh !== 'string' || !result.access || !result.refresh) {
     throw new Error('The server returned an invalid login response.');
   }
 
   tokens = result;
+}
+
+/** A POS PIN session has no refresh token: expiry requires the staff PIN again. */
+export function setPinAccessToken(access: string): void {
+  tokens = { access, refresh: '' };
 }

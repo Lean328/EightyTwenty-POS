@@ -1,6 +1,5 @@
 // Authentication: JWT access token sent in the Authorization header.
 // Cookies are not sent.
-// (cookie, `credentials: 'include'`). No API keys or secrets are ever bundled into the POS.
 import type { RequestOptions } from '../contracts';
 
 export type ApiErrorKind =
@@ -32,6 +31,7 @@ export interface HttpClientOptions {
   fetchImpl?: typeof fetch;
   isOnline?: () => boolean;
   getAccessToken?: () => string | null;
+  getDeviceCredential?: () => string | null;
 }
 
 export interface HttpClient {
@@ -59,9 +59,14 @@ export function createHttpClient(o: HttpClientOptions): HttpClient {
     const timer = setTimeout(() => ctrl.abort('timeout'), o.timeoutMs);
     const onAbort = () => ctrl.abort(opts.signal?.reason);
     opts.signal?.addEventListener('abort', onAbort, { once: true });
-    const headers: Record<string, string> = { Accept: 'application/json', 'X-Terminal-Id': o.terminalId };
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'X-Terminal-Id': o.terminalId,
+    };
     const token = o.getAccessToken?.();
 
+    const deviceCredential = o.getDeviceCredential?.();
+    if (deviceCredential) headers['X-Pos-Device'] = deviceCredential;
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
@@ -96,7 +101,7 @@ export function createHttpClient(o: HttpClientOptions): HttpClient {
             code?: string;
           };
         };
-        
+
         message = err.error?.message || err.message || message;
         code = err.error?.code || err.code || code;
       } catch {

@@ -92,7 +92,7 @@ export async function pinKey(store: PosStore, k: string): Promise<void> {
   set({ pin: np, verifying: true, err: '' });
   let res;
   try {
-    res = await store.backend.staffAuth.verifyPin(np);
+    res = await store.backend.staffAuth.verifyPin(np, { expectedStaffId: d.expectedStaffId });
   } catch (e) {
     const offline = e instanceof ApiError && (e.kind === 'offline' || e.kind === 'network' || e.kind === 'timeout');
     return set({ pin: '', verifying: false, err: offline ? 'Cannot check PINs while offline' : 'Could not check the PIN — try again' });

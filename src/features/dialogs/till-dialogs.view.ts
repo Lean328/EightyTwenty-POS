@@ -341,6 +341,7 @@ export function buildStaffDialog(store: PosStore) {
             dlg: {
               kind: 'pin',
               pin: '',
+              expectedStaffId: x.id,
               title: `Switch to ${x.name.split(' ')[0]}`,
               body: 'Enter their 4-digit PIN',
               perm: 'pos',

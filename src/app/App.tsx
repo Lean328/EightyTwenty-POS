@@ -1,3 +1,4 @@
+import { LiveTill } from './LiveTill';
 import { lazy, Suspense, useEffect } from 'react';
 import { Shell } from '../features/shell/Shell';
 import { loadKitchenScreen, loadOpsScreen } from '../features/shell/lazyScreens';
@@ -147,6 +148,10 @@ function OfflineStartBanner({ since }: { since: string }) {
 }
 
 export function App({ store }: { store: PosStore }) {
+  if (import.meta.env.DEV && window.location.hash === '#live-till') {
+    return <LiveTill store={store} />;
+  }
+
   if (import.meta.env.DEV && window.location.hash === '#backend-check') {
     return <BackendConnectionCheck store={store} />;
   }

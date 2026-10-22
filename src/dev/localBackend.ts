@@ -121,11 +121,11 @@ export function createLocalBackend(): PosBackend {
       adjustBalance: ok,
     },
     staffAuth: {
-      verifyPin: async (pin) => {
+      verifyPin: async (pin, opts) => {
         const snap = current();
         const id = Object.entries(pins()).find(([, p]) => p === pin)?.[0];
         const staff = id ? [...snap.staff, ...readJSON<StaffMember[]>(STAFF_KEY, [])].find((s) => s.id === id) : undefined;
-        if (!staff) return null;
+        if (!staff || (opts?.expectedStaffId && staff.id !== opts.expectedStaffId)) return null;
         return { staff, permissions: sanitizeRoles(snap.roles)[staff.role].perms };
       },
       createStaff: async (profile, pin) => {

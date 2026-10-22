@@ -131,6 +131,7 @@ export interface ShiftDialog {
 }
 
 export interface PinDialog {
+  expectedStaffId?: string;
   kind: 'pin';
   pin: string;
   title: string;

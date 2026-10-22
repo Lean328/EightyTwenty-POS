@@ -1,3 +1,4 @@
+import { CreatePickupOrder } from './CreatePickupOrder';
 import { useEffect, useState } from 'react';
 import type { MenuCategory, MenuItem, ModSelection } from '../domain/types';
 import { config } from '../config/env';
@@ -186,7 +187,8 @@ function QuotePicker({
             </p>
           ))}
           <strong>Server subtotal: {money(quote.subtotalCents)}</strong>
-          <p>No order has been created and no payment has been taken.</p>
+          <p>A quote does not reserve the price; Django recalculates when creating the order.</p>
+          <CreatePickupOrder slug={slug} line={{ itemId: item.id, qty, selections }} />
         </div>
       )}
     </section>
@@ -229,7 +231,7 @@ function PreviewSession({ store, slug, menu, categories, unavailableItemIds }: P
     <StoreContext.Provider value={store}>
       <section style={{ padding: 16, background: '#F5EDE2', borderRadius: 14 }}>
         <h3>Till integration preview</h3>
-        <p>Select an item to get a price from Django. Payments are not enabled.</p>
+        <p>Select an item, request a server quote, create a pickup order and record cash received.</p>
         <PreviewGrid onPick={setSelectedId} busy={busy} />
         {selected && (
           <QuotePicker key={selected.id} item={selected} slug={slug} busy={busy} setBusy={setBusy} onClose={() => setSelectedId('')} />

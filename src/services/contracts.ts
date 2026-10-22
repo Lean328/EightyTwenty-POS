@@ -192,7 +192,7 @@ export interface StaffAuthService {
    * Verify a 4-digit PIN. Resolves null when the PIN is not recognised.
    * The backend must rate-limit attempts and return the permissions it will enforce for this staff member.
    */
-  verifyPin(pin: string, opts?: RequestOptions): Promise<PinVerification | null>;
+  verifyPin(pin: string, opts?: RequestOptions & { expectedStaffId?: string }): Promise<PinVerification | null>;
   createStaff(profile: Omit<StaffMember, 'id'>, pin: string, opts?: RequestOptions): Promise<StaffMember>;
   setRole(staffId: string, role: RoleId, opts?: RequestOptions): Promise<void>;
   setRoleMatrix(roles: RoleMatrix, opts?: RequestOptions): Promise<void>;
