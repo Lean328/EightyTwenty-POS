@@ -118,6 +118,7 @@ export interface OrderLine {
 }
 
 export interface Payment {
+  shiftId?: string;
   method: PaymentMethod;
   /** Cents applied to the order (excludes tip and surcharge). */
   amount: number;
@@ -149,6 +150,7 @@ export type OrderActionMode = 'cancel' | 'void' | 'refund';
 
 /** A refund, void or cancellation applied to an order. */
 export interface OrderAdjustment {
+  shiftId?: string;
   key: string;
   mode: OrderActionMode;
   /** Cents returned to the customer. */

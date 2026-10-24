@@ -49,7 +49,9 @@ export function buildInventory(store: PosStore) {
         mods: m.mods.length ? m.mods.map((g) => g.name).join(', ') : '—',
         price: s.prices[m.id] != null ? s.prices[m.id] : m.price,
         ...photo(m),
+        canEditPrice: store.backend.kind === 'local' || store.staff()?.role === 'admin',
         setPrice: (e: Input) => {
+          if (store.backend.kind === 'http' && store.staff()?.role !== 'admin') return;
           const v = parseFloat(e.target.value);
           if (isNaN(v) || v < 0) return;
           const price = Math.round(v * 100) / 100;
@@ -57,6 +59,7 @@ export function buildInventory(store: PosStore) {
           store.sendDebounced('price:' + m.id, { type: 'catalog.price', itemId: m.id, price });
         },
         logPrice: () => {
+          if (store.backend.kind === 'http' && store.staff()?.role !== 'admin') return;
           const v = store.state.prices[m.id];
           if (v != null && v !== m.price)
             store.logAudit('Price changed', `${m.name} → $${(+v).toFixed(2)} (was $${m.price.toFixed(2)})`, { area: 'Inventory' });

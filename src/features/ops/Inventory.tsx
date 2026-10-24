@@ -136,6 +136,8 @@ export function Inventory({ o }: { o: InventoryView }) {
                           step="0.5"
                           min="0"
                           value={m.price}
+                          disabled={!m.canEditPrice}
+                          title={m.canEditPrice ? 'Edit branch price' : 'Owner/admin access required'}
                           onChange={m.setPrice}
                           onBlur={m.logPrice}
                           aria-label="Price"

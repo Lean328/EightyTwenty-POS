@@ -1,6 +1,11 @@
 // Namespaced, failure-tolerant localStorage access (private mode, quota and disabled storage all degrade to no-ops).
 
-const NS = 'et-pos:v2:';
+let NS = 'et-pos:v2:';
+
+/** Set before creating the store or outbox. Existing namespaces are preserved. */
+export function setStorageScope(scope: string): void {
+  NS = `et-pos:bos-v1:${encodeURIComponent(scope)}:`;
+}
 
 export function readJSON<T>(key: string, fallback: T): T {
   try {

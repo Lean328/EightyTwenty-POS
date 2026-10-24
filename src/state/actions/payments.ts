@@ -115,7 +115,12 @@ export function takePayment(store: PosStore, tender: Tender): void {
     store.send({ type: 'order.create', order: r.o });
   }
   const orderId = id;
-  const pay: Payment = { ...tender, at: stamp(), by: store.staff().name };
+  const pay: Payment = {
+    ...tender,
+    ...(s.shift ? { shiftId: s.shift.id } : {}),
+    at: stamp(),
+    by: store.staff().name,
+  };
   if (tender.method === 'gift' && tender.giftLast4) {
     giftcards = redeemGift(giftcards, tender.giftLast4, tender.amount, orderId);
     const card = giftcards.find((g) => g.code.endsWith(tender.giftLast4!));

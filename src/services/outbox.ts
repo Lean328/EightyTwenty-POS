@@ -98,7 +98,7 @@ export class Outbox {
       } catch (e) {
         const err = e instanceof ApiError ? e : new ApiError('unknown', e instanceof Error ? e.message : String(e));
         const attempts = entry.attempts + 1;
-        if (!err.retryable) {
+        if (!err.retryable && err.kind !== 'unauthorized') {
           const rejected: RejectedEntry = { ...entry, attempts, lastError: err.message, rejectedAt: new Date().toISOString() };
           this.commit({
             pending: this.state.pending.filter((x) => x.id !== entry.id),

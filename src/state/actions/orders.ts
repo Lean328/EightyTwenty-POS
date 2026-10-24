@@ -118,6 +118,7 @@ export function applyOrderAction(store: PosStore, id: string, act: OrderActionRe
     if (c) store.send({ type: 'loyalty.balance', customerId: c.id, stamps: c.stamps, rewards: c.rewards, reason: `${act.mode} · ${id}` });
   }
   const rec: OrderAdjustment = {
+    ...(s.shift ? { shiftId: s.shift.id } : {}),
     key: act.key,
     mode: act.mode,
     amount: refundC,

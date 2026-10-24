@@ -107,10 +107,10 @@ export class PosStore {
 
   async loadBootstrap(): Promise<void> {
     const data = await loadPosBootstrap();
-  
+
     // Frontend dùng slug làm mã chi nhánh trong các API POS.
     const cafeId = data.location.slug;
-  
+
     const location = {
       id: cafeId,
       name: data.location.name,
@@ -121,27 +121,25 @@ export class PosStore {
       email: '',
       tbc: data.location.status !== 'open',
     };
-  
+
     this.setState({
       catalog: {
         locations: [location],
         categories: data.categories,
         menu: data.menu,
-        menuById: Object.fromEntries(
-          data.menu.map((item) => [item.id, item]),
-        ),
+        menuById: Object.fromEntries(data.menu.map((item) => [item.id, item])),
         cateringPackages: [],
         tables: [],
         promotions: [],
       },
-  
+
       cafe: cafeId,
       cat: data.categories[0]?.id ?? '',
       catOrder: data.categories.map((category) => category.id),
-  
+
       staff: [data.session.staff],
       staffId: data.session.staff.id,
-  
+
       roles: {
         cashier: { label: 'Cashier', perms: [] },
         manager: { label: 'Manager', perms: [] },
@@ -151,14 +149,14 @@ export class PosStore {
           perms: data.session.permissions,
         },
       },
-  
+
       branchOff: {
         [cafeId]: data.unavailableItemIds,
       },
       soldOut: [],
       prices: {},
       unavailableMods: [],
-  
+
       // Không mang giỏ hàng demo sang phiên dữ liệu thật.
       lines: [],
       customerId: null,
@@ -168,20 +166,20 @@ export class PosStore {
       note: '',
       held: [],
 
-    // Clear records from the previous session before using live data.
-    orders: [],
-    customers: [],
-    giftcards: [],
-    reservations: [],
-    catering: [],
-    stock: [],
-    stockLog: [],
-    audit: [],
-    shift: null,
-    shifts: [],
-    reports: null,
-    selOrder: null,
-    dlg: null,
+      // Clear records from the previous session before using live data.
+      orders: [],
+      customers: [],
+      giftcards: [],
+      reservations: [],
+      catering: [],
+      stock: [],
+      stockLog: [],
+      audit: [],
+      shift: null,
+      shifts: [],
+      reports: null,
+      selOrder: null,
+      dlg: null,
     });
   }
 
@@ -288,6 +286,10 @@ export class PosStore {
   }
 
   nextOrderNo(): string {
+    if (this.backend.kind === 'http') {
+      const prefix = this.config.terminalId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6) || 'POS';
+      return `${prefix}-${crypto.randomUUID().replace(/-/g, '')}`;
+    }
     this.orderSeq += 1;
     writeJSON(ORDER_SEQ_KEY, this.orderSeq);
     return `#8020-${this.orderSeq}`;

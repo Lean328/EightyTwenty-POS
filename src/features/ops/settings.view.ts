@@ -11,22 +11,23 @@ import { gate, scope, tab, toggleStyle } from './common';
 type Input = ChangeEvent<HTMLInputElement>;
 
 export function buildSettings(store: PosStore) {
-  const s = store.state,
-    { focusCafe: cafeId } = scope(store);
+  const s = store.state;
+  const cafeId = store.backend.kind === 'http' ? s.cafe : scope(store).focusCafe;
   const loc = store.location(cafeId);
   const canEdit = store.can('settings');
   const sim = store.devices.simulated;
   const cf = s.cafeFields[cafeId] || {};
   const pushSettings = () => {
     const { rules, toggles, cafeFields } = store.state;
-    store.sendDebounced('settings', { type: 'settings.update', patch: { rules, toggles, cafeFields } });
+    const patch = store.backend.kind === 'http' ? { toggles } : { rules, toggles, cafeFields };
+    store.sendDebounced('settings', { type: 'settings.update', patch });
   };
   const field = (k: string, key: LocationField) => ({
     k,
     v: cf[key] != null ? cf[key] : loc?.[key] || '',
-    readOnly: !canEdit,
+    readOnly: !canEdit || store.backend.kind === 'http',
     set: (e: Input) => {
-      if (!store.can('settings')) return;
+      if (store.backend.kind === 'http' || !store.can('settings')) return;
       store.setState((st) => ({ cafeFields: { ...st.cafeFields, [cafeId]: { ...(st.cafeFields[cafeId] || {}), [key]: e.target.value } } }));
       pushSettings();
     },
@@ -35,9 +36,9 @@ export function buildSettings(store: PosStore) {
     k,
     sub,
     v: s.rules[key] != null ? s.rules[key] : def,
-    readOnly: !canEdit,
+    readOnly: !canEdit || store.backend.kind === 'http',
     set: (e: Input) => {
-      if (!store.can('settings')) return;
+      if (store.backend.kind === 'http' || !store.can('settings')) return;
       store.setState((st) => ({ rules: { ...st.rules, [key]: e.target.value } }));
       pushSettings();
     },

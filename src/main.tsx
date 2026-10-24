@@ -1,4 +1,6 @@
 import { StrictMode } from 'react';
+import { BosDeviceSignIn } from './app/BosDeviceSignIn';
+import { readJSON, writeJSON, setStorageScope } from './lib/storage';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import { StatusScreen } from './app/StatusScreen';
@@ -38,6 +40,34 @@ async function main() {
     );
     return;
   }
+  if (config.dataProvider === 'http') {
+    root.render(
+      <StrictMode>
+        <BosDeviceSignIn
+          onReady={async (cafe, account) => {
+            const scope = JSON.stringify([config.apiBaseUrl, config.terminalId, account, cafe]);
+            setStorageScope(scope);
+
+            const session = readJSON<Record<string, unknown>>('session', {});
+            if (!writeJSON('session', { ...session, cafe, staffId: '' })) {
+              throw new Error('Browser storage is unavailable. Allow storage before opening this till.');
+            }
+
+            const { backend, devices } = await createDependencies();
+            const outbox = new Outbox((command, key) => dispatchCommand(backend, command, { idempotencyKey: key }));
+            const store = new PosStore({ backend, devices, outbox, config });
+            root.render(
+              <StrictMode>
+                <App store={store} />
+              </StrictMode>,
+            );
+          }}
+        />
+      </StrictMode>,
+    );
+    return;
+  }
+
   const { backend, devices } = await createDependencies();
   const outbox = new Outbox((command, key) => dispatchCommand(backend, command, { idempotencyKey: key }));
   const store = new PosStore({ backend, devices, outbox, config });
