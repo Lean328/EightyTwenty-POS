@@ -20,7 +20,7 @@ import type {
 } from '../domain/types';
 import type { PosBackend, PosSettings, RequestOptions, TransactionRecord } from './contracts';
 
-export type PosCommand =
+export type PosCommand = (
   | { type: 'order.create'; order: Order }
   | { type: 'order.status'; orderId: string; status: OrderStatus; note: string }
   | { type: 'order.accept'; orderId: string }
@@ -47,10 +47,12 @@ export type PosCommand =
   | { type: 'staff.roleMatrix'; roles: RoleMatrix }
   | { type: 'audit.append'; entry: AuditEntry }
   | { type: 'transaction.record'; record: TransactionRecord }
-  | { type: 'settings.update'; patch: Partial<Omit<PosSettings, 'loyalty' | 'loyaltyCopy' | 'categoryOrder'>> };
+  | { type: 'settings.update'; patch: Partial<Omit<PosSettings, 'loyalty' | 'loyaltyCopy' | 'categoryOrder'>> }
+) & { staffToken?: string | null };
 
 /** Send one command to the backend. Exhaustive: adding a command type without a route is a compile error. */
 export function dispatchCommand(b: PosBackend, c: PosCommand, opts: RequestOptions): Promise<void> {
+  if (Object.hasOwn(c, 'staffToken')) opts = { ...opts, staffToken: c.staffToken };
   switch (c.type) {
     case 'order.create':
       return b.orders.create(c.order, opts);

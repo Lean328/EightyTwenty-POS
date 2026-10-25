@@ -1,3 +1,4 @@
+import { getStaffToken } from '../services/http/staffSession';
 // The till's state container. Holds the working copy of shared records plus this device's session,
 // applies changes synchronously, persists them, and sends every business change to the backend as a command.
 import type { AppConfig } from '../config/env';
@@ -257,11 +258,17 @@ export class PosStore {
 
   /** Queue a change for the backend. `label` shows it in the till's offline queue. */
   send(command: PosCommand, label?: string): void {
+    if (this.backend.kind === 'http' && !Object.hasOwn(command, 'staffToken')) {
+      command = { ...command, staffToken: getStaffToken() };
+    }
     this.outbox.enqueue(command, label);
   }
 
   /** Coalesce rapid edits (typing in a field) into one command per key. */
   sendDebounced(key: string, command: PosCommand, ms = 800): void {
+    if (this.backend.kind === 'http' && !Object.hasOwn(command, 'staffToken')) {
+      command = { ...command, staffToken: getStaffToken() };
+    }
     const prev = this.debounced.get(key);
     if (prev) clearTimeout(prev.timer);
     const timer = setTimeout(() => {

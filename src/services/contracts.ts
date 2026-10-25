@@ -43,6 +43,7 @@ import type {
 } from '../domain/types';
 
 export interface RequestOptions {
+  staffToken?: string | null;
   signal?: AbortSignal;
   /** Sent as the Idempotency-Key header. The backend must treat a repeated key as the same request. */
   idempotencyKey?: string;
@@ -183,6 +184,8 @@ export interface GiftCardsService {
 // ---------- Staff authentication and permissions ----------
 
 export interface PinVerification {
+  staffToken?: string;
+  staffTokenExpiresIn?: number;
   staff: StaffMember;
   permissions: Permission[];
 }

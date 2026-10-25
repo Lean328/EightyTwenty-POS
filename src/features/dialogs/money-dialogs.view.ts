@@ -427,18 +427,22 @@ export function buildShiftDialog(store: PosStore, d: DialogOf<'shift'>) {
       if (!d.reason) return set({ err: 'Choose a reason.' });
       const reason = d.reason;
       if (mode === 'out' && a > exp) return set({ err: 'More than the expected cash in the drawer.' });
-      if (mode === 'out')
-        return store.approve('cash.out', 'Manager approval', `Cash out ${fmtC(a)} · ${reason}`, (ap) =>
-          cashMove(store, 'out', a, reason, ap),
+      const type = mode === 'out' ? 'out' : 'in';
+      if (type === 'out' || store.backend.kind === 'http')
+        return store.approve('cash.out', 'Manager approval', `Cash ${type} ${fmtC(a)} · ${reason}`, (ap) =>
+          cashMove(store, type, a, reason, ap),
         );
-      cashMove(store, 'in', a, reason, null);
+      cashMove(store, type, a, reason, null);
     },
     confirmClose: () => {
       if (d.counted === undefined || d.counted === '') return set({ err: 'Count the drawer and enter the total.' });
       if (big && !(d.note || '').trim()) return set({ err: 'Add a note explaining the variance.' });
-      if (big)
-        return store.approve('cash.out', 'Approve variance', `Variance ${fmtC(variance)} on close`, (ap) =>
-          closeShift(store, counted, d.note || '', ap),
+      if (big || store.backend.kind === 'http')
+        return store.approve(
+          'cash.out',
+          big ? 'Approve variance' : 'Approve shift close',
+          `Expected ${fmtC(exp)} · counted ${fmtC(counted)} · variance ${fmtC(variance)}`,
+          (ap) => closeShift(store, counted, d.note || '', ap),
         );
       closeShift(store, counted, d.note || '', null);
     },

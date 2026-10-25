@@ -72,6 +72,7 @@ export function createHttpClient(o: HttpClientOptions): HttpClient {
     }
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
+    if (opts.staffToken) headers['X-Pos-Staff'] = opts.staffToken;
     let res: Response;
     try {
       res = await doFetch(o.baseUrl + path, {

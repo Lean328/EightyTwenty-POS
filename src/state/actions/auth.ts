@@ -1,3 +1,4 @@
+import { getStaffToken, setStaffToken } from '../../services/http/staffSession';
 // Staff sign-in, manager approval by PIN, and permission-gated navigation.
 import { hasPermission, SECTION_GATES } from '../../domain/permissions';
 import type { StaffMember } from '../../domain/types';
@@ -113,5 +114,21 @@ export async function pinKey(store: PosStore, k: string): Promise<void> {
   if (!store.state.staff.some((x) => x.id === staff.id)) store.setState((s) => ({ staff: [...s.staff, staff] }));
   if (!hasPermission(res.permissions, d.perm))
     return set({ pin: '', verifying: false, err: `${staff.name} is a ${store.roles()[staff.role].label} — not permitted` });
-  d.next(staff);
+  if (store.backend.kind !== 'http') {
+    d.next(staff);
+    return;
+  }
+
+  if (!res.staffToken) {
+    return set({ pin: '', verifying: false, err: 'The server did not return a staff session. Sign in again.' });
+  }
+
+  const previousToken = getStaffToken();
+  setStaffToken(res.staffToken);
+  try {
+    d.next(staff);
+  } finally {
+    // A manager approving one action does not become the signed-in cashier.
+    if (store.state.staffId !== staff.id) setStaffToken(previousToken);
+  }
 }

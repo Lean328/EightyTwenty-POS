@@ -33,8 +33,8 @@ export function cashMove(store: PosStore, type: 'in' | 'out', amountC: number, r
     type,
     amount: amountC,
     reason,
-    by: store.staff().name,
-    approver: approver ? approver.name : '',
+    by: (store.backend.kind === 'http' ? (approver ?? store.staff()) : store.staff()).name,
+    approver: approver?.name ?? (store.backend.kind === 'http' ? store.staff().name : ''),
     at: stamp(),
   };
   store.setState((s) => ({ shift: s.shift ? { ...s.shift, moves: [...s.shift.moves, mv] } : s.shift, dlg: { kind: 'shift' } }));
@@ -69,12 +69,12 @@ export function closeShift(store: PosStore, countedC: number, noteText: string, 
     ...sh,
     status: 'closed',
     closedAt: stamp(),
-    closedBy: store.staff().name,
+    closedBy: (store.backend.kind === 'http' ? (approver ?? store.staff()) : store.staff()).name,
     counted: countedC,
     expected: exp,
     variance: countedC - exp,
     note: noteText,
-    approvedBy: approver ? approver.name : '',
+    approvedBy: approver?.name ?? (store.backend.kind === 'http' ? store.staff().name : ''),
   };
   store.setState((s) => ({ shift: null, shifts: [closed, ...(s.shifts || [])], dlg: { kind: 'shift', summary: closed.id } }));
   store.send({ type: 'shift.close', shift: closed });
