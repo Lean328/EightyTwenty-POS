@@ -16,9 +16,35 @@ const lastLabel = (n: number) => (n <= 0 ? 'Today' : n === 1 ? 'Yesterday' : n <
 const cap = (x: string) => (x ? x[0].toUpperCase() + x.slice(1) : '');
 const ext = (c: Customer) => ({ visits: c.visits ?? 0, spend: c.spend ?? 0, lastDays: c.lastDays ?? 30 });
 
-function setBalance(store: PosStore, c: Customer, next: Pick<Customer, 'stamps' | 'rewards'>, reason: string): void {
-  store.setState((st) => ({ customers: st.customers.map((x) => (x.id === c.id ? { ...x, ...next } : x)) }));
-  store.send({ type: 'loyalty.balance', customerId: c.id, stamps: next.stamps, rewards: next.rewards, reason });
+function setBalance(
+  store: PosStore,
+  c: Customer,
+  next: Pick<Customer, 'stamps' | 'rewards'>,
+  reason: string,
+  action: 'stamp' | 'redeem',
+): boolean {
+  const live = store.backend.kind === 'http';
+  if (live && action === 'stamp' && c.rewards > 0) {
+    store.say('Redeem the available reward before adding another stamp.');
+    return false;
+  }
+  if (live && action === 'redeem' && c.rewards < 1) {
+    store.say('No reward is available to redeem.');
+    return false;
+  }
+  if (live && !store.state.cafe) {
+    store.say('Select a cafe before updating loyalty.');
+    return false;
+  }
+
+  const balance = live && action === 'redeem' ? { stamps: 0, rewards: 0 } : next;
+  store.setState((st) => ({ customers: st.customers.map((x) => (x.id === c.id ? { ...x, ...balance } : x)) }));
+  if (live) {
+    store.send({ type: 'loyalty.action', customerId: c.id, cafe: store.state.cafe, action });
+  } else {
+    store.send({ type: 'loyalty.balance', customerId: c.id, stamps: next.stamps, rewards: next.rewards, reason });
+  }
+  return true;
 }
 
 const FILTERS: [string, string, (c: Customer) => boolean][] = [
@@ -161,13 +187,13 @@ export function buildCustomers(store: PosStore) {
       walletLine: c.wallet ? 'Apple Wallet pass' : 'No wallet pass yet',
       addStamp: () =>
         gate(store, 'loyalty.stamp', 'Add a stamp', () => {
-          setBalance(store, c, addStamps(c, 1, per), 'Manual stamp');
-          store.say('Stamp added for ' + c.name.split(' ')[0]);
+          if (!setBalance(store, c, addStamps(c, 1, per), 'Manual stamp', 'stamp')) return;
+          store.say(store.backend.kind === 'http' ? 'Stamp queued. Check sync status.' : 'Stamp added for ' + c.name.split(' ')[0]);
         }),
       redeem: () =>
         gate(store, 'loyalty.stamp', 'Redeem a reward', () => {
-          setBalance(store, c, { stamps: c.stamps, rewards: Math.max(0, c.rewards - 1) }, 'Reward redeemed');
-          store.say('Reward redeemed');
+          if (!setBalance(store, c, { stamps: c.stamps, rewards: Math.max(0, c.rewards - 1) }, 'Reward redeemed', 'redeem')) return;
+          store.say(store.backend.kind === 'http' ? 'Redemption queued. Check sync status.' : 'Reward redeemed');
         }),
       notes: c.notes,
       editingNote: ed === 'note',
@@ -278,16 +304,16 @@ export function buildLoyalty(store: PosStore) {
         stampsLabel: `${Math.min(c.stamps, per)} of ${per} stamps`,
         stamp: () =>
           gate(store, 'loyalty.stamp', 'Add a stamp', () => {
-            setBalance(store, c, addStamps(c, 1, per), 'Manual stamp');
-            store.say(`Stamp added for ${c.name.split(' ')[0]}`);
+            if (!setBalance(store, c, addStamps(c, 1, per), 'Manual stamp', 'stamp')) return;
+            store.say(store.backend.kind === 'http' ? 'Stamp queued. Check sync status.' : `Stamp added for ${c.name.split(' ')[0]}`);
           }),
         noReward: !c.rewards,
         redeemBg: c.rewards ? '#B67A4B' : '#9A8B80',
         redeem: () =>
           gate(store, 'loyalty.stamp', 'Redeem a reward', () => {
             if (c.rewards < 1) return;
-            setBalance(store, c, { stamps: c.stamps, rewards: c.rewards - 1 }, 'Reward redeemed');
-            store.say(`Free coffee redeemed · ${c.name}`);
+            if (!setBalance(store, c, { stamps: c.stamps, rewards: c.rewards - 1 }, 'Reward redeemed', 'redeem')) return;
+            store.say(store.backend.kind === 'http' ? 'Redemption queued. Check sync status.' : `Free coffee redeemed · ${c.name}`);
           }),
       })),
     loy: {

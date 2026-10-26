@@ -147,6 +147,7 @@ export interface CustomersService {
 }
 
 export interface LoyaltyService {
+  applyAction(customerId: string, cafe: string, action: 'stamp' | 'redeem', opts?: RequestOptions): Promise<void>;
   /** Set a customer's card to the given balance. `reason` is recorded against the change (order id, manual stamp, redemption…). */
   setBalance(customerId: string, balance: { stamps: number; rewards: number }, reason: string, opts?: RequestOptions): Promise<void>;
   updateSettings(settings: LoyaltySettings, opts?: RequestOptions): Promise<void>;

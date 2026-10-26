@@ -102,7 +102,7 @@ export function createLocalBackend(): PosBackend {
       adjustStock: ok,
     },
     customers: { update: ok },
-    loyalty: { setBalance: ok, updateSettings: ok },
+    loyalty: { applyAction: ok, setBalance: ok, updateSettings: ok },
     reservations: { upsert: ok },
     catering: { upsert: ok },
     giftCards: {

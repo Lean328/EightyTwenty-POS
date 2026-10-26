@@ -50,6 +50,7 @@ export function createHttpBackend(http: HttpClient): PosBackend {
       update: (id, patch, opts) => http.put(`/api/v1/pos/customers/${enc(id)}`, patch, opts),
     },
     loyalty: {
+      applyAction: (id, cafe, action, opts) => http.post(`/api/v1/pos/customers/${enc(id)}/loyalty/actions`, { cafe, action }, opts),
       setBalance: (id, balance, reason, opts) => http.put(`/api/v1/pos/customers/${enc(id)}/loyalty`, { ...balance, reason }, opts),
       updateSettings: (settings, opts) => http.put(`/loyalty/v1/settings`, settings, opts),
     },

@@ -35,6 +35,7 @@ export type PosCommand = (
   | { type: 'catalog.categoryOrder'; ids: string[] }
   | { type: 'stock.adjust'; stockId: string; delta: number; reason: string }
   | { type: 'customer.update'; customerId: string; patch: Partial<Omit<Customer, 'id' | 'stamps' | 'rewards'>> }
+  | { type: 'loyalty.action'; customerId: string; cafe: string; action: 'stamp' | 'redeem' }
   | { type: 'loyalty.balance'; customerId: string; stamps: number; rewards: number; reason: string }
   | { type: 'loyalty.settings'; settings: LoyaltySettings }
   | { type: 'reservation.upsert'; reservation: Reservation }
@@ -82,6 +83,8 @@ export function dispatchCommand(b: PosBackend, c: PosCommand, opts: RequestOptio
       return b.catalog.adjustStock(c.stockId, c.delta, c.reason, opts);
     case 'customer.update':
       return b.customers.update(c.customerId, c.patch, opts);
+    case 'loyalty.action':
+      return b.loyalty.applyAction(c.customerId, c.cafe, c.action, opts);
     case 'loyalty.balance':
       return b.loyalty.setBalance(c.customerId, { stamps: c.stamps, rewards: c.rewards }, c.reason, opts);
     case 'loyalty.settings':

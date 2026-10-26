@@ -20,6 +20,7 @@ export const DEFAULT_ROLES: RoleMatrix = {
       'catering',
       'customers',
       'loyalty',
+      'loyalty.stamp',
       'gift',
       'inventory',
       'reports',
@@ -62,7 +63,8 @@ const KNOWN = new Set<string>([
   ...PERMISSIONS.map(([p]) => p),
 ]);
 
-export const hasPermission = (perms: readonly Permission[], perm: Permission): boolean => perms.includes('*') || perms.includes(perm);
+export const hasPermission = (perms: readonly Permission[], perm: Permission): boolean =>
+  perms.includes('*') || perms.includes(perm) || (perm === 'loyalty.stamp' && perms.includes('loyalty'));
 
 /** Drop permissions this POS does not know about (e.g. retired CMS grants in stored role data). */
 export function sanitizeRoles(roles: RoleMatrix | null | undefined): RoleMatrix {
