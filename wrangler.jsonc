@@ -1,10 +1,6 @@
 {
-  // Cloudflare Workers static site: `npm run deploy`, or Workers Builds with
-  // build command `npm run build:cloudflare` and deploy command `npx wrangler deploy`.
+  // Cloudflare Pages project (https://eightytwenty-pos.pages.dev). Deploy with `npm run deploy` — see docs/DEPLOYMENT.md.
   "name": "eightytwenty-pos",
+  "pages_build_output_dir": "./dist",
   "compatibility_date": "2026-10-01",
-  "assets": {
-    "directory": "./dist",
-    "not_found_handling": "single-page-application",
-  },
 }

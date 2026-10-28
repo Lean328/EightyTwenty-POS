@@ -65,6 +65,7 @@ connection loss. With local data everything stays in one browser — real cross-
 | `npm run format`    | Prettier (write) — `format:check` to verify only                 |
 | `npm test`          | Unit, workflow, regression and UI smoke tests (Vitest)           |
 | `npm run validate`  | Everything above in order: typecheck, lint, format, tests, build |
+| `npm run deploy`    | Build for the live site and publish it (see docs/DEPLOYMENT.md)  |
 
 ## Configuration
 
@@ -101,19 +102,11 @@ Deploy `dist/` as static files. The app uses hash routing (`#till`, `#orders`…
 needed. Serve `index.html` with `Cache-Control: no-cache` and `dist/assets/*` (content-hashed) as immutable.
 With `VITE_DATA_PROVIDER=http` the bundle contains no sample data, demo PINs or simulators.
 
-### Cloudflare (hosted till)
+### Live site (Cloudflare Pages)
 
-`.env.cloudflare` points the build at the live EightyTwenty API; `wrangler.jsonc` serves `dist/` as a Cloudflare
-Workers static site named `eightytwenty-pos`.
-
-- From this folder: `npm run deploy` (first time `npx wrangler@4 login`).
-- Or connect the Git repository in Cloudflare (Workers & Pages → Create → Import a repository), project name
-  `eightytwenty-pos`, build command `npm run build:cloudflare`, deploy command `npx wrangler deploy`. Every push to
-  the connected branch redeploys.
-
-One hosted build serves every till, so each device is given its own terminal ID once: open
-`https://<site>/?terminal=BRADDON-TILL-1`. The device remembers it (shown as "Terminal: …" on the sign-in screen);
-open the link again with another ID to change it.
+The till is live at **https://eightytwenty-pos.pages.dev**. To publish a new version: `git pull && npm ci && npm run
+deploy`. Pushing to GitHub does not deploy. Account access, previews, rollback, setting up a till device and
+troubleshooting: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Project layout
 
