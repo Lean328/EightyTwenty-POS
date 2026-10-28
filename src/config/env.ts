@@ -17,6 +17,25 @@ export interface AppConfig {
   errors: string[];
 }
 
+const TERMINAL_KEY = 'pos-terminal-id';
+
+// One hosted build serves every till, so each device keeps its own ID: open the till once with
+// ?terminal=BRADDON-TILL-1 and the device remembers it. Without one, VITE_TERMINAL_ID is used.
+function deviceTerminalId(fallback: string): string {
+  try {
+    const url = new URL(window.location.href);
+    const fromUrl = (url.searchParams.get('terminal') || '').trim().toUpperCase();
+    if (/^[A-Z0-9-]{3,40}$/.test(fromUrl)) {
+      localStorage.setItem(TERMINAL_KEY, fromUrl);
+      url.searchParams.delete('terminal');
+      window.history.replaceState(null, '', url.toString());
+    }
+    return localStorage.getItem(TERMINAL_KEY) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function readConfig(): AppConfig {
   const env = import.meta.env;
   const errors: string[] = [];
@@ -42,7 +61,7 @@ function readConfig(): AppConfig {
     dataProvider,
     apiBaseUrl,
     apiTimeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 15000,
-    terminalId: (env.VITE_TERMINAL_ID || 'TILL-1').trim(),
+    terminalId: deviceTerminalId((env.VITE_TERMINAL_ID || 'TILL-1').trim()),
     devTools: dataProvider === 'local' && (env.DEV || env.VITE_ENABLE_DEV_TOOLS === 'true'),
     errors,
   };

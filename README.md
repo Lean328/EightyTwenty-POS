@@ -101,6 +101,20 @@ Deploy `dist/` as static files. The app uses hash routing (`#till`, `#orders`…
 needed. Serve `index.html` with `Cache-Control: no-cache` and `dist/assets/*` (content-hashed) as immutable.
 With `VITE_DATA_PROVIDER=http` the bundle contains no sample data, demo PINs or simulators.
 
+### Cloudflare (hosted till)
+
+`.env.cloudflare` points the build at the live EightyTwenty API; `wrangler.jsonc` serves `dist/` as a Cloudflare
+Workers static site named `eightytwenty-pos`.
+
+- From this folder: `npm run deploy` (first time `npx wrangler@4 login`).
+- Or connect the Git repository in Cloudflare (Workers & Pages → Create → Import a repository), project name
+  `eightytwenty-pos`, build command `npm run build:cloudflare`, deploy command `npx wrangler deploy`. Every push to
+  the connected branch redeploys.
+
+One hosted build serves every till, so each device is given its own terminal ID once: open
+`https://<site>/?terminal=BRADDON-TILL-1`. The device remembers it (shown as "Terminal: …" on the sign-in screen);
+open the link again with another ID to change it.
+
 ## Project layout
 
 ```
