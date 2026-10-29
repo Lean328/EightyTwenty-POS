@@ -112,7 +112,7 @@ export function applyOrderAction(store: PosStore, id: string, act: OrderActionRe
           const l = o.lines.find((x) => x.key === k);
           return n + (l && isEligible(menuById[l.itemId]) ? q : 0);
         }, 0);
-  if (o.customerId && o.stamped && coffeeUnits) {
+  if (o.customerId && o.stamped && coffeeUnits && !o.serverLoyalty) {
     customers = customers.map((c) => (c.id === o.customerId ? { ...c, stamps: Math.max(0, c.stamps - coffeeUnits) } : c));
     const c = customers.find((x) => x.id === o.customerId);
     if (c) store.send({ type: 'loyalty.balance', customerId: c.id, stamps: c.stamps, rewards: c.rewards, reason: `${act.mode} · ${id}` });

@@ -36,7 +36,7 @@ export type PosCommand = (
   | { type: 'stock.adjust'; stockId: string; delta: number; reason: string }
   | { type: 'customer.update'; customerId: string; patch: Partial<Omit<Customer, 'id' | 'stamps' | 'rewards'>> }
   | { type: 'loyalty.action'; customerId: string; cafe: string; action: 'stamp' | 'redeem' }
-  | { type: 'loyalty.balance'; customerId: string; stamps: number; rewards: number; reason: string }
+  | { type: 'loyalty.balance'; customerId: string; stamps: number; rewards: number; reason: string; dependsOnOrderId?: string }
   | { type: 'loyalty.settings'; settings: LoyaltySettings }
   | { type: 'reservation.upsert'; reservation: Reservation }
   | { type: 'catering.upsert'; enquiry: CateringEnquiry }

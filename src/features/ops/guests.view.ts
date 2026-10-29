@@ -275,6 +275,10 @@ export function buildLoyalty(store: PosStore) {
   const R = s.reports?.loyalty || { stamps: 0, rewards: 0, newMembers: 0, walletPasses: 0 };
   const setLoy = (patch: Partial<typeof s.loy>) => {
     if (!store.can('loyalty')) return;
+    if (store.backend.kind === 'http') {
+      store.say('Loyalty settings are not available on this server yet.');
+      return;
+    }
     const loy = { ...store.state.loy, ...patch };
     store.setState({ loy });
     store.sendDebounced('loyalty-settings', { type: 'loyalty.settings', settings: loy });
