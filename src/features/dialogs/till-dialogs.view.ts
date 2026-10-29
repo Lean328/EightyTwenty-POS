@@ -209,6 +209,7 @@ export function buildDiscountDialog(store: PosStore, d: DialogOf<'discount'>) {
     },
     applyGift: () => {
       const code = (d.code || '').replace(/\s/g, '');
+      if (store.backend.kind === 'http') return set({ msg: 'Gift cards at the till are not available yet.', ok: false });
       const g = s.giftcards.find((x) => x.code.replace(/\s/g, '').endsWith(code) && code.length >= 4);
       if (!g) return set({ msg: 'Gift card not found', ok: false });
       if (g.balance <= 0) return set({ msg: 'This gift card has no balance left', ok: false });

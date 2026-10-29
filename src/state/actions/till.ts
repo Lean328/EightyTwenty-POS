@@ -60,6 +60,7 @@ export function holdCart(store: PosStore): void {
 export function sendKitchen(store: PosStore): void {
   const s = store.state;
   if (!s.lines.length) return store.say('Add items first');
+  if (store.backend.kind === 'http' && s.gift) return store.say('Remove the gift card before sending this order. Gift cards at the till are not available yet.');
   const sold = new Set(s.soldOut || []);
   const bad = s.lines.find((l) => sold.has(l.itemId));
   if (bad) return store.say(`${bad.name} is sold out — remove it first`);

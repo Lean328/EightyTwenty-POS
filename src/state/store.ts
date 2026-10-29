@@ -1,4 +1,5 @@
 import { getStaffToken } from '../services/http/staffSession';
+import { refreshCustomerLoyalty } from './actions/loyaltySync';
 // The till's state container. Holds the working copy of shared records plus this device's session,
 // applies changes synchronously, persists them, and sends every business change to the backend as a command.
 import type { AppConfig } from '../config/env';
@@ -61,6 +62,9 @@ export class PosStore {
   private persisted: Partial<PosState> = {};
   private persistStopped = false;
   private orderSeq = 0;
+  private loyaltyRefresh = new Set<string>();
+  private refreshingLoyalty = false;
+  private loyaltyRefreshVersion = 0;
   private commandBatch: { command: PosCommand; label?: string }[] | null = null;
   private debounced = new Map<string, { timer: ReturnType<typeof setTimeout>; command: PosCommand }>();
   readonly backend: PosBackend;
@@ -76,11 +80,46 @@ export class PosStore {
     const session = readJSON<Partial<SessionState>>(SESSION_KEY, {});
     this.st = initialState(session, deps.devices.initialStates());
     // Only re-render when the visible offline queue actually changes.
+    let previousEntries = this.outbox.pending;
     this.outbox.subscribe(() => {
+      if (this.backend.kind === 'http') {
+        this.loyaltyRefreshVersion++;
+        const outstanding = new Set([...this.outbox.pending, ...this.outbox.rejected].map((entry) => entry.id));
+        for (const entry of previousEntries) {
+          if (outstanding.has(entry.id)) continue;
+          const command = entry.command;
+          const customerId = command.type === 'loyalty.action' || command.type === 'loyalty.balance'
+            ? command.customerId
+            : command.type === 'order.create' ? command.order.customerId
+              : command.type === 'payment.record' || command.type === 'order.adjust'
+                ? this.st.orders.find((order) => order.id === command.orderId)?.customerId : undefined;
+          if (customerId) this.loyaltyRefresh.add(customerId);
+        }
+        previousEntries = this.outbox.pending;
+        // Subscribe after the current notification has finished, so it cannot invalidate its own read.
+        if (this.loyaltyRefresh.size) queueMicrotask(() => { void this.refreshLoyaltyWhenIdle(); });
+      }
       const queue = this.queueFromOutbox();
       // Re-render when rejection or blocking changes, even if visible queue IDs do not.
       this.setState({ queue });
     });
+  }
+
+  private async refreshLoyaltyWhenIdle(): Promise<void> {
+    if (this.refreshingLoyalty || this.outbox.pending.length || this.outbox.rejected.length) return;
+    this.refreshingLoyalty = true;
+    const version = this.loyaltyRefreshVersion;
+    try {
+      for (const id of [...this.loyaltyRefresh]) {
+        if (await refreshCustomerLoyalty(this, id)) this.loyaltyRefresh.delete(id);
+      }
+    } finally {
+      this.refreshingLoyalty = false;
+      // Retry a read invalidated by a newer command, without looping on network errors.
+      if (this.loyaltyRefresh.size && version !== this.loyaltyRefreshVersion) {
+        queueMicrotask(() => { void this.refreshLoyaltyWhenIdle(); });
+      }
+    }
   }
 
   // ---------- external store protocol (useSyncExternalStore) ----------
@@ -330,8 +369,10 @@ export class PosStore {
 
   nextOrderNo(): string {
     if (this.backend.kind === 'http') {
-      const prefix = this.config.terminalId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 6) || 'POS';
-      return `${prefix}-${crypto.randomUUID().replace(/-/g, '')}`;
+      const prefix = this.config.terminalId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 3).toUpperCase() || 'POS';
+      // 12 random base-36 characters (~62 bits), generated once and retained on every retry.
+      // The backend's unique order number constraint remains the final collision guard.
+      return uid(`${prefix}-`, 12);
     }
     this.orderSeq += 1;
     writeJSON(ORDER_SEQ_KEY, this.orderSeq);

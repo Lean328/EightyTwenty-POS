@@ -94,10 +94,10 @@ export function buildPayDialog(store: PosStore, d: DialogOf<'pay'>) {
     ['cash', 'Cash', noShift ? 'open a shift first' : 'rounded to 5c'],
     ['card', 'Card', offline ? 'paused offline' : '+2.95%'],
     ['wallet', 'Apple Pay', offline ? 'paused offline' : '+2.95%'],
-    ['gift', 'Gift card', offline ? 'paused offline' : 'any balance'],
+    ['gift', 'Gift card', store.backend.kind === 'http' ? 'not available yet' : offline ? 'paused offline' : 'any balance'],
   ];
   const methods = methodDefs.map(([id, name, sub]) => {
-    const dis = processing || (offline && id !== 'cash');
+    const dis = processing || (offline && id !== 'cash') || (store.backend.kind === 'http' && id === 'gift');
     return {
       id,
       name,
@@ -106,7 +106,7 @@ export function buildPayDialog(store: PosStore, d: DialogOf<'pay'>) {
       disabled: dis,
       opacity: dis ? 0.45 : 1,
       ...on(method === id),
-      pick: () => set({ method: id, err: '', status: 'idle' }),
+      pick: () => { if (!dis) set({ method: id, err: '', status: 'idle' }); },
     };
   });
   const ledger = [
@@ -252,6 +252,7 @@ export function buildPayDialog(store: PosStore, d: DialogOf<'pay'>) {
     giftCode: d.giftCode || '',
     setGiftCode: (e: Input) => set({ giftCode: e.target.value, err: '' }),
     checkGift: () => {
+      if (store.backend.kind === 'http') return set({ err: 'Gift cards at the till are not available yet.', gift: null });
       const code = (d.giftCode || '').replace(/\s/g, '');
       const g = code.length >= 4 && s.giftcards.find((x) => x.code.replace(/\s/g, '').endsWith(code));
       if (!g) return set({ err: 'Gift card not found.', gift: null });

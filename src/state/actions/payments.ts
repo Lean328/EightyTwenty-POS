@@ -27,8 +27,9 @@ const redeemGift = (cards: GiftCard[], last4: string, amountC: number, orderId: 
 
 /** Turn the current cart into an open order (not yet sent anywhere). A gift card applied in Discounts is taken as the first payment. */
 export function cartToOrder(store: PosStore): { o: Order; giftcards: GiftCard[] } {
-  const s = store.state,
-    t = cartTotals(store, s.lines, null),
+  const s = store.state;
+  if (store.backend.kind === 'http' && s.gift) throw new Error('Gift cards at the till are not available yet. Remove the gift card before continuing.');
+  const t = cartTotals(store, s.lines, null),
     who = store.staff().name;
   const o: Order = {
     id: store.nextOrderNo(),
@@ -50,6 +51,7 @@ export function cartToOrder(store: PosStore): { o: Order; giftcards: GiftCard[] 
     note: s.note,
     discounts: s.discount ? [{ label: s.discount.label, amount: t.disc }] : [],
     rewardUsed: !!(s.discount && s.discount.kind === 'reward'),
+    serverLoyalty: store.backend.kind === 'http',
     staff: who,
     queued: !s.online,
     history: [{ at: stamp(), what: `Created on till by ${who}` }],
@@ -95,6 +97,10 @@ export type Tender = Omit<Payment, 'at' | 'by'>;
  * Idempotent: the tender's ref is the dialog's key, so a double tap or a retried terminal response is ignored.
  */
 export function takePayment(store: PosStore, tender: Tender): void {
+  if (store.backend.kind === 'http' && (tender.method === 'gift' || store.state.gift)) {
+    store.say('Gift cards at the till are not available yet. Choose another payment method.');
+    return;
+  }
   if (!store.state.online && tender.method === 'cash') {
     try {
       const finish = store.runCommandBatch(() => recordTender(store, tender));
