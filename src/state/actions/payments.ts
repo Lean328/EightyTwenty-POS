@@ -4,6 +4,7 @@ import { addStamps, stampsFor } from '../../domain/loyalty';
 import { totals, type Totals } from '../../domain/pricing';
 import type { Customer, GiftCard, Order, OrderLine, Payment } from '../../domain/types';
 import { nowHM, stamp, uid } from '../../lib/ids';
+import { OutboxStorageError } from '../../services/outbox';
 import type { PosStore } from '../store';
 import type { PayDialog } from '../types';
 import { kickDrawer, note, printDocket, printReceipt } from './orders';
@@ -26,8 +27,9 @@ const redeemGift = (cards: GiftCard[], last4: string, amountC: number, orderId: 
 
 /** Turn the current cart into an open order (not yet sent anywhere). A gift card applied in Discounts is taken as the first payment. */
 export function cartToOrder(store: PosStore): { o: Order; giftcards: GiftCard[] } {
-  const s = store.state,
-    t = cartTotals(store, s.lines, null),
+  const s = store.state;
+  if (store.backend.kind === 'http' && s.gift) throw new Error('Gift cards at the till are not available yet. Remove the gift card before continuing.');
+  const t = cartTotals(store, s.lines, null),
     who = store.staff().name;
   const o: Order = {
     id: store.nextOrderNo(),
@@ -49,6 +51,7 @@ export function cartToOrder(store: PosStore): { o: Order; giftcards: GiftCard[] 
     note: s.note,
     discounts: s.discount ? [{ label: s.discount.label, amount: t.disc }] : [],
     rewardUsed: !!(s.discount && s.discount.kind === 'reward'),
+    serverLoyalty: store.backend.kind === 'http',
     staff: who,
     queued: !s.online,
     history: [{ at: stamp(), what: `Created on till by ${who}` }],
@@ -68,7 +71,7 @@ export function cartToOrder(store: PosStore): { o: Order; giftcards: GiftCard[] 
 
 /** Award stamps once per order (and spend a reward if one was redeemed). Returns updated customers and a receipt message. */
 export function awardLoyalty(store: PosStore, o: Order, customers: Customer[]): [Customer[], string] {
-  if (!o.customerId || o.stamped) return [customers, ''];
+  if (!o.customerId || o.stamped || o.serverLoyalty) return [customers, ''];
   const c = customers.find((x) => x.id === o.customerId);
   if (!c) return [customers, ''];
   const per = store.state.loy.per;
@@ -80,7 +83,7 @@ export function awardLoyalty(store: PosStore, o: Order, customers: Customer[]): 
   }
   if (n && store.state.toggles.autoStamp) cc = addStamps(cc, n, per);
   else n = 0;
-  if (cc !== c) store.send({ type: 'loyalty.balance', customerId: c.id, stamps: cc.stamps, rewards: cc.rewards, reason: `Order ${o.id}` });
+  if (cc !== c) store.send({ type: 'loyalty.balance', customerId: c.id, stamps: cc.stamps, rewards: cc.rewards, reason: `Order ${o.id}`, dependsOnOrderId: o.id });
   const msg = n
     ? `${c.name.split(' ')[0]} earned ${n} stamp${n > 1 ? 's' : ''} · ${cc.rewards ? cc.rewards + ' free coffee ready' : per - cc.stamps + ' to go'}`
     : '';
@@ -94,16 +97,39 @@ export type Tender = Omit<Payment, 'at' | 'by'>;
  * Idempotent: the tender's ref is the dialog's key, so a double tap or a retried terminal response is ignored.
  */
 export function takePayment(store: PosStore, tender: Tender): void {
+  if (store.backend.kind === 'http' && (tender.method === 'gift' || store.state.gift)) {
+    store.say('Gift cards at the till are not available yet. Choose another payment method.');
+    return;
+  }
+  if (!store.state.online && tender.method === 'cash') {
+    try {
+      const finish = store.runCommandBatch(() => recordTender(store, tender));
+      finish?.();
+    } catch (error) {
+      if (!(error instanceof OutboxStorageError)) throw error;
+      store.say('Could not save this sale on the device. Do not take payment; check storage.');
+    }
+    return;
+  }
+  recordTender(store, tender)?.();
+}
+
+function recordTender(store: PosStore, tender: Tender): (() => void) | undefined {
   const s = store.state,
     d = s.dlg;
-  if (!d || d.kind !== 'pay' || d.key !== tender.ref) return store.say('Payment already recorded');
+  if (!d || d.kind !== 'pay' || d.key !== tender.ref) {
+    store.say('Payment already recorded');
+    return;
+  }
   let orders = s.orders,
     giftcards = s.giftcards,
     id = d.forOrderId,
     patch = {},
     created: Order | null = null;
-  if (id && (orders.find((o) => o.id === id)?.payments || []).some((p) => p.ref === tender.ref))
-    return store.say('Payment already recorded');
+  if (id && (orders.find((o) => o.id === id)?.payments || []).some((p) => p.ref === tender.ref)) {
+    store.say('Payment already recorded');
+    return;
+  }
   if (!id) {
     if (!s.lines.length) return;
     const r = cartToOrder(store);
@@ -143,11 +169,9 @@ export function takePayment(store: PosStore, tender: Tender): void {
   const done = paidC(o) >= toC(o.total);
   let customers = s.customers,
     loyalty = '';
-  if (done) {
-    [customers, loyalty] = awardLoyalty(store, o, customers);
-    orders = orders.map((x) => (x.id === orderId ? { ...x, paid: true, stamped: true } : x));
-  }
+  if (done) orders = orders.map((x) => (x.id === orderId ? { ...x, paid: true, stamped: true } : x));
   store.send({ type: 'payment.record', orderId, payment: pay }, s.online ? undefined : `${orderId} · cash ${fmtC(tender.amount)}`);
+  if (done) [customers, loyalty] = awardLoyalty(store, o, customers);
   store.send({
     type: 'transaction.record',
     record: {
@@ -176,9 +200,11 @@ export function takePayment(store: PosStore, tender: Tender): void {
     count: (d.count || 0) + 1,
   };
   store.setState({ ...patch, orders, giftcards, shift, customers, dlg: done ? { kind: 'receipt', orderId, loyalty } : next });
-  if (tender.method === 'cash' && store.state.toggles.openDrawer) kickDrawer(store);
-  if (created) setTimeout(() => printDocket(store, orderId), 0);
-  if (done && store.state.toggles.receipt) setTimeout(() => printReceipt(store, orderId, false), 0);
+  return () => {
+    if (tender.method === 'cash' && store.state.toggles.openDrawer) kickDrawer(store);
+    if (created) setTimeout(() => printDocket(store, orderId), 0);
+    if (done && store.state.toggles.receipt) setTimeout(() => printReceipt(store, orderId, false), 0);
+  };
 }
 
 /** Card / wallet through the terminal. Guarded so a second tap while processing does nothing. */

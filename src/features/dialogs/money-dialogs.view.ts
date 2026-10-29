@@ -94,10 +94,10 @@ export function buildPayDialog(store: PosStore, d: DialogOf<'pay'>) {
     ['cash', 'Cash', noShift ? 'open a shift first' : 'rounded to 5c'],
     ['card', 'Card', offline ? 'paused offline' : '+2.95%'],
     ['wallet', 'Apple Pay', offline ? 'paused offline' : '+2.95%'],
-    ['gift', 'Gift card', offline ? 'paused offline' : 'any balance'],
+    ['gift', 'Gift card', store.backend.kind === 'http' ? 'not available yet' : offline ? 'paused offline' : 'any balance'],
   ];
   const methods = methodDefs.map(([id, name, sub]) => {
-    const dis = processing || (offline && id !== 'cash');
+    const dis = processing || (offline && id !== 'cash') || (store.backend.kind === 'http' && id === 'gift');
     return {
       id,
       name,
@@ -106,7 +106,7 @@ export function buildPayDialog(store: PosStore, d: DialogOf<'pay'>) {
       disabled: dis,
       opacity: dis ? 0.45 : 1,
       ...on(method === id),
-      pick: () => set({ method: id, err: '', status: 'idle' }),
+      pick: () => { if (!dis) set({ method: id, err: '', status: 'idle' }); },
     };
   });
   const ledger = [
@@ -252,6 +252,7 @@ export function buildPayDialog(store: PosStore, d: DialogOf<'pay'>) {
     giftCode: d.giftCode || '',
     setGiftCode: (e: Input) => set({ giftCode: e.target.value, err: '' }),
     checkGift: () => {
+      if (store.backend.kind === 'http') return set({ err: 'Gift cards at the till are not available yet.', gift: null });
       const code = (d.giftCode || '').replace(/\s/g, '');
       const g = code.length >= 4 && s.giftcards.find((x) => x.code.replace(/\s/g, '').endsWith(code));
       if (!g) return set({ err: 'Gift card not found.', gift: null });
@@ -625,10 +626,16 @@ export function buildSyncDialog(store: PosStore) {
   return {
     close: () => closeDialog(store),
     online: s.online,
-    statusLine: s.online
-      ? s.queue.length
-        ? `${s.queue.length} item${s.queue.length === 1 ? '' : 's'} waiting to sync`
-        : 'Online · everything synced'
+    statusLine: store.outbox.storageError
+      ? 'Device storage is unavailable · changes may not be saved'
+      : store.outbox.rejected.length
+      ? `${store.outbox.rejected.length} change(s) rejected · manager review required`
+      : s.online
+      ? store.outbox.rejected.length
+        ? `Online · ${store.outbox.rejected.length} change${store.outbox.rejected.length === 1 ? '' : 's'} need review`
+        : s.queue.length
+          ? `${s.queue.length} item${s.queue.length === 1 ? '' : 's'} waiting to sync`
+          : 'Online · everything synced'
       : 'Offline · cash sales are saved on this till and sync later. Card, Apple Pay and gift cards are paused.',
     dot: s.online ? '#3E6B47' : '#9A4436',
     /** Connection loss can only be simulated in development; production follows the real network. */
@@ -636,6 +643,28 @@ export function buildSyncDialog(store: PosStore) {
     toggleLabel: s.online ? 'Simulate connection loss' : 'Restore connection',
     toggle: () => setOnline(store, !s.online),
     syncNow: () => void runSync(store),
+    rejected: store.outbox.rejected.map((entry) => {
+      const command = entry.command;
+      const orderId = 'orderId' in command ? command.orderId : 'order' in command ? command.order.id : '';
+      return {
+        id: entry.id,
+        label: orderId ? `${command.type} · ${orderId}` : command.type,
+        error: entry.lastError || 'The server rejected this change.',
+        paymentReview: command.type === 'payment.record',
+        canRetry: command.type === 'order.create',
+        retry: () => store.approve('orders.refund', 'Manager approval', `Review ${orderId} before retrying`, () => {
+          const queued = store.outbox.retryRejectedOrder(entry.id);
+          store.setState({ dlg: { kind: 'sync' } });
+          store.say(
+            queued
+              ? 'Order queued for retry'
+              : store.outbox.storageError
+                ? 'Device storage is unavailable — the order was not queued'
+                : 'This order cannot be retried now',
+          );
+        }),
+      };
+    }),
     queue: s.queue.map((q) => ({ id: q.id, label: q.label, at: q.at })),
     hasQueue: s.queue.length > 0,
     conflicts: (s.conflicts || []).map((c) => ({

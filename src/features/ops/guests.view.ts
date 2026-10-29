@@ -24,10 +24,6 @@ function setBalance(
   action: 'stamp' | 'redeem',
 ): boolean {
   const live = store.backend.kind === 'http';
-  if (live && action === 'stamp' && c.rewards > 0) {
-    store.say('Redeem the available reward before adding another stamp.');
-    return false;
-  }
   if (live && action === 'redeem' && c.rewards < 1) {
     store.say('No reward is available to redeem.');
     return false;
@@ -37,7 +33,7 @@ function setBalance(
     return false;
   }
 
-  const balance = live && action === 'redeem' ? { stamps: 0, rewards: 0 } : next;
+  const balance = next;
   store.setState((st) => ({ customers: st.customers.map((x) => (x.id === c.id ? { ...x, ...balance } : x)) }));
   if (live) {
     store.send({ type: 'loyalty.action', customerId: c.id, cafe: store.state.cafe, action });
@@ -275,6 +271,10 @@ export function buildLoyalty(store: PosStore) {
   const R = s.reports?.loyalty || { stamps: 0, rewards: 0, newMembers: 0, walletPasses: 0 };
   const setLoy = (patch: Partial<typeof s.loy>) => {
     if (!store.can('loyalty')) return;
+    if (store.backend.kind === 'http') {
+      store.say('Loyalty settings are not available on this server yet.');
+      return;
+    }
     const loy = { ...store.state.loy, ...patch };
     store.setState({ loy });
     store.sendDebounced('loyalty-settings', { type: 'loyalty.settings', settings: loy });

@@ -44,6 +44,16 @@ export async function runSync(store: PosStore): Promise<void> {
     store.say('Could not reach the server — the till will keep retrying');
     return;
   }
+  if (store.outbox.storageError) {
+    store.say('Device storage is unavailable — changes may not be saved');
+    return;
+  }
+  if (res.waiting || store.outbox.rejected.length) {
+    log(store, `Sync needs review · ${res.waiting} waiting · ${store.outbox.rejected.length} rejected`);
+    store.say('Sync needs review — some changes are still waiting or were rejected');
+    return;
+  }
+
   store.setState((st) => ({
     orders: st.orders.map((o) => (o.queued ? { ...o, queued: false, history: note(o, 'Synced to head office') } : o)),
   }));

@@ -8,6 +8,13 @@ import { uid } from '../lib/ids';
 import { ApiError } from './http/httpClient';
 import type { PosCommand } from './commands';
 
+export class OutboxStorageError extends Error {
+  constructor() {
+    super('Device storage is unavailable. Changes were not saved.');
+    this.name = 'OutboxStorageError';
+  }
+}
+
 export interface OutboxEntry {
   /** Idempotency key. */
   id: string;
@@ -17,6 +24,8 @@ export interface OutboxEntry {
   at: string;
   attempts: number;
   lastError?: string;
+  /** A rejected prerequisite that must be reviewed before this command can be sent. */
+  blockedBy?: string;
 }
 
 export interface RejectedEntry extends OutboxEntry {
@@ -33,9 +42,23 @@ interface OutboxState {
 const KEY = 'outbox';
 const MAX_BACKOFF_MS = 60_000;
 
+function dependentOrderId(command: PosCommand): string | undefined {
+  if ('orderId' in command) return command.orderId;
+  if (command.type === 'loyalty.balance') return command.dependsOnOrderId;
+  if (command.type === 'transaction.record') return command.record.orderId;
+  return undefined;
+}
+
+function rejectedOrderId(command: PosCommand): string | undefined {
+  if (command.type === 'order.create') return command.order.id;
+  if (command.type === 'payment.record') return command.orderId;
+  return undefined;
+}
+
 export class Outbox {
   private state: OutboxState;
   private online = true;
+  private storageIssue = false;
   private flushing: Promise<FlushResult> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<() => void>();
@@ -49,6 +72,10 @@ export class Outbox {
   get pending(): readonly OutboxEntry[] {
     return this.state.pending;
   }
+  get storageError(): boolean {
+    return this.storageIssue;
+  }
+
   get rejected(): readonly RejectedEntry[] {
     return this.state.rejected;
   }
@@ -65,6 +92,25 @@ export class Outbox {
     return entry;
   }
 
+  /** Persist a group together before any command is sent. */
+  enqueueBatch(commands: { command: PosCommand; label?: string }[]): OutboxEntry[] {
+    if (!commands.length) return [];
+    const entries = commands.map(({ command, label }) => ({
+      id: uid('CMD-', 16), command, label, at: new Date().toISOString(), attempts: 0,
+    }));
+    const next = { ...this.state, pending: [...this.state.pending, ...entries] };
+    if (!writeJSON(KEY, next)) {
+      this.storageIssue = true;
+      this.listeners.forEach((listener) => listener());
+      throw new OutboxStorageError();
+    }
+    this.state = next;
+    this.storageIssue = false;
+    this.listeners.forEach((listener) => listener());
+    if (this.online) void this.flush();
+    return entries;
+  }
+
   setOnline(online: boolean): void {
     this.online = online;
     if (online) void this.flush();
@@ -76,6 +122,24 @@ export class Outbox {
 
   dismissRejected(id: string): void {
     this.commit({ ...this.state, rejected: this.state.rejected.filter((r) => r.id !== id) });
+  }
+
+  /** Retry a rejected order creation with its original idempotency key after review. */
+  retryRejectedOrder(id: string): boolean {
+    const rejected = this.state.rejected.find((entry) => entry.id === id);
+    if (!rejected || rejected.command.type !== 'order.create' || this.state.pending.some((entry) => entry.id === id)) return false;
+    const { rejectedAt: _rejectedAt, ...entry } = rejected;
+    const next = { ...this.state, pending: [entry, ...this.state.pending] };
+    if (!writeJSON(KEY, next)) {
+      this.storageIssue = true;
+      this.listeners.forEach((listener) => listener());
+      return false;
+    }
+    this.state = next;
+    this.storageIssue = false;
+    this.listeners.forEach((listener) => listener());
+    if (this.online) void this.flush();
+    return true;
   }
 
   /** Deliver pending commands in order. Resolves when the queue is empty or delivery has to wait. */
@@ -91,10 +155,28 @@ export class Outbox {
     let sent = 0;
     while (this.online && this.state.pending.length) {
       const entry = this.state.pending[0];
+      if (entry.blockedBy) return { sent, waiting: this.state.pending.length, error: null };
+
+      const orderId = dependentOrderId(entry.command);
+      const rejectedCreate = orderId
+        ? this.state.rejected.find((item) => rejectedOrderId(item.command) === orderId)
+        : undefined;
+
+      if (rejectedCreate) {
+        this.commit({
+          ...this.state,
+          pending: this.state.pending.map((item) => item.id === entry.id ? { ...item, blockedBy: rejectedCreate.id } : item),
+        });
+        return { sent, waiting: this.state.pending.length, error: null };
+      }
+
       try {
         await this.transport(entry.command, entry.id);
         sent++;
-        this.commit({ ...this.state, pending: this.state.pending.filter((e) => e.id !== entry.id) });
+        this.commit({
+          pending: this.state.pending.filter((e) => e.id !== entry.id).map((e) => e.blockedBy === entry.id ? { ...e, blockedBy: undefined } : e),
+          rejected: this.state.rejected.filter((e) => e.id !== entry.id),
+        });
       } catch (e) {
         const err = e instanceof ApiError ? e : new ApiError('unknown', e instanceof Error ? e.message : String(e));
         const attempts = entry.attempts + 1;
@@ -105,8 +187,13 @@ export class Outbox {
         ) {
           const rejected: RejectedEntry = { ...entry, attempts, lastError: err.message, rejectedAt: new Date().toISOString() };
           this.commit({
-            pending: this.state.pending.filter((x) => x.id !== entry.id),
-            rejected: [rejected, ...this.state.rejected].slice(0, 100),
+            pending: this.state.pending
+              .filter((x) => x.id !== entry.id)
+              .map((item) => {
+                const failedOrderId = rejectedOrderId(entry.command);
+                return failedOrderId && dependentOrderId(item.command) === failedOrderId ? { ...item, blockedBy: entry.id } : item;
+              }),
+            rejected: [rejected, ...this.state.rejected.filter((item) => item.id !== entry.id)],
           });
           continue;
         }
@@ -132,7 +219,7 @@ export class Outbox {
 
   private commit(next: OutboxState): void {
     this.state = next;
-    writeJSON(KEY, next);
+    this.storageIssue = !writeJSON(KEY, next);
     this.listeners.forEach((l) => l());
   }
 }

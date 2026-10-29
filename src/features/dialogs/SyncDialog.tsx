@@ -122,6 +122,30 @@ export function SyncDialog({ d }: { d: SyncDialogView }) {
             ))}
           </>
         ) : null}
+        {d.rejected.length > 0 ? (
+          <section aria-label="Rejected changes" style={{ marginTop: '16px' }}>
+            <h3 style={{ margin: '0 0 8px', font: '600 12px/1 Figtree', color: '#9A4436', textTransform: 'uppercase' }}>
+              Changes needing review
+            </h3>
+            {d.rejected.map((entry) => (
+              <div key={entry.id} style={{ padding: '12px', borderRadius: '12px', background: '#FBE9E4', marginBottom: '6px' }}>
+                <p style={{ margin: 0, font: '600 13px/1.4 Figtree' }}>{entry.label}</p>
+                <p style={{ margin: '4px 0 0', font: '500 13px/1.4 Figtree', color: '#8A2E1C' }}>{entry.error}</p>
+                {entry.paymentReview ? (
+                  <p style={{ margin: '8px 0 0', font: '500 12px/1.4 Figtree' }}>
+                    Payment needs manager review. Check the order and payment in BOS before taking any further action.
+                  </p>
+                ) : null}
+                {entry.canRetry ? (
+                  <button type="button" onClick={entry.retry} style={{ marginTop: '8px' }}>Retry order after review</button>
+                ) : null}
+              </div>
+            ))}
+            <p style={{ margin: '8px 0', font: '500 12px/1.4 Figtree' }}>
+              Ask a manager to review these changes before continuing.
+            </p>
+          </section>
+        ) : null}
         {d.hasQueue ? (
           <>
             <h3

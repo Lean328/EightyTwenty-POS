@@ -193,6 +193,8 @@ export interface Order {
   note?: string;
   discounts?: { label: string; amount: number }[];
   rewardUsed?: boolean;
+  /** Loyalty for this order is processed by the backend. */
+  serverLoyalty?: boolean;
   staff?: string;
   /** Recorded while offline and not yet confirmed by the server. */
   queued?: boolean;

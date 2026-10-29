@@ -7,6 +7,7 @@ import { buildFormView } from '../features/ops/forms.view';
 import { buildTillView } from '../features/till/till.view';
 import { lineShareC, paidC, refundedC } from '../domain/ledger';
 import { createTestStore } from '../test/createTestStore';
+import { Outbox } from '../services/outbox';
 import { isLocked } from './actions/auth';
 import { effective } from './actions/catalog';
 import { openOrderAct } from './actions/orders';
@@ -36,6 +37,96 @@ const lastOrder = (store: PosStore) => store.state.orders[0];
 afterEach(() => vi.useRealTimers());
 
 describe('checkout', () => {
+
+  it('queues offline payment before its dependent loyalty update', async () => {
+    const { store, outbox } = await createTestStore();
+    openShift(store, 0);
+    await outbox.flush();
+    setOnline(store, false);
+    store.setState({ customerId: 'c3' });
+    add(store, 'turmeric');
+    buildTillView(store).openPay();
+    pay(store).methods.find((m) => m.id === 'cash')!.pick();
+    pay(store).setTender(ev('10'));
+    pay(store).confirm();
+
+    const commands = outbox.pending.map((entry) => entry.command);
+    const payment = commands.findIndex((command) => command.type === 'payment.record');
+    const loyalty = commands.findIndex((command) => command.type === 'loyalty.balance');
+
+    expect(payment).toBeGreaterThanOrEqual(0);
+    expect(loyalty).toBeGreaterThan(payment);
+    expect(commands[loyalty]).toMatchObject({ dependsOnOrderId: lastOrder(store).id });
+  });
+  it('rolls back offline discount audit and loyalty when saving the cash sale fails', async () => {
+    const { store, outbox } = await createTestStore();
+    openShift(store, 0);
+    await outbox.flush();
+    setOnline(store, false);
+    store.setState({ customerId: 'c3', discount: { kind: 'amt', value: 0.05, label: '5c off' } });
+    add(store, 'turmeric');
+    buildTillView(store).openPay();
+    pay(store).methods.find((m) => m.id === 'cash')!.pick();
+    pay(store).setTender(ev('10'));
+    const beforeAudit = store.state.audit.length;
+    const beforeStamps = store.state.customers.find((customer) => customer.id === 'c3')!.stamps;
+    const beforeQueue = outbox.pending.length;
+    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Quota exceeded'); });
+    try {
+      pay(store).confirm();
+      expect(store.state.audit).toHaveLength(beforeAudit);
+      expect(store.state.customers.find((customer) => customer.id === 'c3')!.stamps).toBe(beforeStamps);
+      expect(outbox.pending).toHaveLength(beforeQueue);
+      expect(store.state.dlg?.kind).toBe('pay');
+    } finally {
+      write.mockRestore();
+    }
+  });
+
+  it('persists the offline cash order and payment together before displaying the receipt', async () => {
+    const { store, outbox } = await createTestStore();
+    openShift(store, 20000);
+    await outbox.flush();
+    setOnline(store, false);
+    add(store, 'turmeric');
+    buildTillView(store).openPay();
+    pay(store).methods.find((m) => m.id === 'cash')!.pick();
+    pay(store).setTender(ev('10'));
+    pay(store).confirm();
+    const order = lastOrder(store);
+    expect(order.paid).toBe(true);
+    expect(store.state.dlg?.kind).toBe('receipt');
+    const saved = new Outbox(async () => {});
+    const entries = saved.pending.filter((entry) => entry.command.type === 'order.create' || entry.command.type === 'payment.record');
+    expect(entries.map((entry) => entry.command.type)).toEqual(['order.create', 'payment.record']);
+    expect(entries.map((entry) => entry.id)).toEqual(outbox.pending.filter((entry) => entry.command.type === 'order.create' || entry.command.type === 'payment.record').map((entry) => entry.id));
+  });
+
+  it('does not complete an offline cash sale when its command batch cannot be saved', async () => {
+    const { store, outbox } = await createTestStore();
+    openShift(store, 20000);
+    await outbox.flush();
+    setOnline(store, false);
+    add(store, 'turmeric');
+    buildTillView(store).openPay();
+    pay(store).methods.find((m) => m.id === 'cash')!.pick();
+    pay(store).setTender(ev('10'));
+    const previousOrders = store.state.orders.length;
+    const previousQueue = outbox.pending.length;
+    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Quota exceeded'); });
+    try {
+      pay(store).confirm();
+      expect(store.state.orders).toHaveLength(previousOrders);
+      expect(store.state.lines).toHaveLength(1);
+      expect(store.state.dlg?.kind).toBe('pay');
+      expect(store.state.toast).toContain('Could not save this sale');
+      expect(outbox.pending).toHaveLength(previousQueue);
+      expect(outbox.storageError).toBe(true);
+    } finally {
+      write.mockRestore();
+    }
+  });
+
   it('takes a cash sale: order, payment, change, drawer, loyalty-free receipt and backend commands', async () => {
     const { store, outbox, types } = await createTestStore();
     openShift(store, 20000);
