@@ -221,8 +221,11 @@ export function buildCustomers(store: PosStore) {
             .map((z) => z.trim())
             .filter(Boolean),
         }),
+      canSendGift: store.backend.kind === 'local',
       sendGift: () =>
-        gate(store, 'gift', 'Sell a gift card', () =>
+        store.backend.kind === 'http'
+          ? store.say('Issue gift cards in BOS. To redeem, select a customer and use Gift card in Payment.')
+          : gate(store, 'gift', 'Sell a gift card', () =>
           store.setOps({ form: { kind: 'gift', v: { amount: '50', customerId: c.id, note: '' } } }),
         ),
       orders: ex === 'orders' ? ords : ords.slice(0, 3),
@@ -343,6 +346,10 @@ export function buildGift(store: PosStore) {
   let gd = null;
   if (g) {
     const adjust = (amount: number, what: string, msg: string) => {
+      if (store.backend.kind === 'http') {
+        store.say('Top up in BOS. Redeem through Payment; refund through the original order.');
+        return;
+      }
       store.setState((st) => ({
         giftcards: st.giftcards.map((x: GiftCard) =>
           x.code === g.code ? { ...x, balance: r2(x.balance + amount), history: [...x.history, { d: 'Today', what, amt: amount }] } : x,
@@ -383,6 +390,7 @@ export function buildGift(store: PosStore) {
   }
   const month = new Date().toLocaleDateString('en-AU', { month: 'short' });
   return {
+    liveGift: store.backend.kind === 'http',
     giftKpis: [
       { label: 'Active cards', value: s.giftcards.filter((x) => x.balance > 0).length, delta: `${s.giftcards.length} issued in total` },
       {

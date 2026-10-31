@@ -311,6 +311,7 @@ export function buildFormView(store: PosStore, f: OpsForm) {
       ],
       submit: async () => {
         if (f.busy) return;
+        if (store.backend.kind === 'http') return fail('Issue and top up gift cards in BOS. To redeem, select a customer and use Gift card in Payment.');
         const a = amount;
         if (!(a >= 10 && a <= 500)) return fail('Amount must be between $10 and $500.');
         setForm({ busy: true, err: '' });

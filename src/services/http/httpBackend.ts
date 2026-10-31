@@ -85,9 +85,12 @@ export function createHttpBackend(http: HttpClient): PosBackend {
         }
         return result;
       },
-      issue: (req, opts) => http.post(`/gift-cards/v1`, req, opts),
-      adjustBalance: (code, amount, reason, opts) =>
-        http.post(`/gift-cards/v1/${enc(code.replace(/\s/g, ''))}/adjustments`, { amount, reason }, opts),
+      issue: async () => {
+        throw new ApiError('validation', 'Issue gift cards in BOS.');
+      },
+      adjustBalance: async () => {
+        throw new ApiError('validation', 'Top up in BOS. Redeem through Payment; refund through the original order.');
+      },
     },
     staffAuth: {
       verifyPin: async (pin, opts) => {

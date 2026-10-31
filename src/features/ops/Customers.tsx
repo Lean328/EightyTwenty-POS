@@ -282,7 +282,7 @@ export function Customers({ o }: { o: CustomersView }) {
                   >
                     {o.cp.noteLabel}
                   </button>
-                  <button
+                  {o.cp.canSendGift && <button
                     type="button"
                     onClick={o.cp.sendGift}
                     style={{
@@ -298,7 +298,7 @@ export function Customers({ o }: { o: CustomersView }) {
                     }}
                   >
                     Send gift card
-                  </button>
+                  </button>}
                   <button
                     type="button"
                     onClick={o.cp.toggleEdit}

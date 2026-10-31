@@ -14,6 +14,15 @@ function setup() {
 }
 
 describe('deployed POS gift card contract', () => {
+  it('rejects unsupported issuance and standalone balance edits without sending HTTP requests', async () => {
+    const ctx = setup();
+    await expect(ctx.backend.giftCards.issue({ amount: 50, customerId: 'c1', cafeId: 'braddon', issuedAt: 'POS', note: '' }))
+      .rejects.toMatchObject({ kind: 'validation', retryable: false });
+    await expect(ctx.backend.giftCards.adjustBalance('4471', 10, 'Top up'))
+      .rejects.toMatchObject({ kind: 'validation', retryable: false });
+    expect(ctx.post).not.toHaveBeenCalled();
+  });
+
   it('reads the customer gift endpoint with staff auth and retains integer cents', async () => {
     const ctx = setup();
     const balance = { id: 'card-uuid', customerId: 'customer 1', last4: '4471', balance: 1234 };
