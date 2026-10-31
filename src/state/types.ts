@@ -108,7 +108,8 @@ export interface PayDialog {
   amount?: string;
   tender?: string;
   tip?: number;
-  gift?: { last4: string; balance: number } | null;
+  gift?: { id?: string; customerId?: string; last4: string; balance: number } | null;
+  giftChecking?: boolean;
   giftCode?: string;
   status?: 'idle' | 'processing' | 'failed';
   err?: string;
@@ -148,6 +149,7 @@ export interface OrderActionDialog {
   kind: 'ordact';
   orderId: string;
   mode: OrderActionMode;
+  processing?: boolean;
   sel: Record<string, number>;
   by: 'items' | 'amount';
   amount: string;

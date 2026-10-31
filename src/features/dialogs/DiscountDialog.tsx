@@ -159,7 +159,14 @@ export function DiscountDialog({ d }: { d: DiscountDialogView }) {
           </>
         ) : null}
         {d.isGift ? (
-          <>
+          d.liveGift ? <>
+            <p style={{ margin: '0 0 12px', font: '500 13px/1.4 Figtree' }}>{d.giftCustomerLabel}</p>
+            <button type="button" disabled={!d.giftCanPay} onClick={d.openGiftPayment}
+              style={{ height: '44px', padding: '0 18px', borderRadius: '12px', border: 0, background: '#2C1A12', color: '#F5EDE2', font: '600 13px/1 Figtree' }}>
+              Continue to gift card payment
+            </button>
+            <p style={{ margin: '10px 0 0', font: '400 12px/1.4 Figtree', color: '#8C7A6E' }}>Check the balance and confirm payment on the next screen.</p>
+          </> : <>
             <div style={{ display: 'flex', gap: '8px' }}>
               <input
                 type="text"

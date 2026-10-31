@@ -52,7 +52,7 @@ export type PosCommand = (
 ) & { staffToken?: string | null };
 
 /** Send one command to the backend. Exhaustive: adding a command type without a route is a compile error. */
-export function dispatchCommand(b: PosBackend, c: PosCommand, opts: RequestOptions): Promise<void> {
+export function dispatchCommand(b: PosBackend, c: PosCommand, opts: RequestOptions): Promise<unknown> {
   if (Object.hasOwn(c, 'staffToken')) opts = { ...opts, staffToken: c.staffToken };
   switch (c.type) {
     case 'order.create':

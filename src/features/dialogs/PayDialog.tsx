@@ -405,7 +405,7 @@ export function PayDialog({ d }: { d: PayDialogView }) {
         {d.isGift ? (
           <>
             <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-              <input
+              {d.liveGift ? <p style={{ flex: 1, margin: 0, alignSelf: 'center', font: '500 13px/1.4 Figtree' }}>{d.giftCustomerLabel}</p> : <input
                 type="text"
                 value={d.giftCode}
                 onChange={d.setGiftCode}
@@ -418,9 +418,10 @@ export function PayDialog({ d }: { d: PayDialogView }) {
                   border: '1px solid rgba(44,26,18,.12)',
                   background: '#F7F2EA',
                 }}
-              />
+              />}
               <button
                 type="button"
+                disabled={d.processing || d.giftBlocked}
                 onClick={d.checkGift}
                 style={{
                   height: '42px',
@@ -432,7 +433,7 @@ export function PayDialog({ d }: { d: PayDialogView }) {
                   whiteSpace: 'nowrap',
                 }}
               >
-                Check balance
+                {d.giftChecking ? 'Checking…' : 'Check balance'}
               </button>
             </div>
             {d.giftLine ? <p style={{ margin: '8px 0 0', font: '500 13px/1.4 Figtree', color: '#3E6B47' }}>{d.giftLine}</p> : null}
@@ -446,7 +447,7 @@ export function PayDialog({ d }: { d: PayDialogView }) {
         <button
           type="button"
           onClick={d.confirm}
-          disabled={d.processing}
+          disabled={d.confirmDisabled}
           style={{
             marginTop: '16px',
             width: '100%',

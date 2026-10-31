@@ -4,8 +4,9 @@ import { getAccessToken } from './authSession';
 // HTTP adapter for EightyTwenty BOS.
 // Core POS routes use the implemented Django API.
 // Remaining proposed routes still require backend support.
-import type { PosBackend, PosSnapshot } from '../contracts';
-import { createHttpClient, type HttpClient } from './httpClient';
+import type { GiftCardBalance, PosBackend, PosSnapshot } from '../contracts';
+import { ApiError, createHttpClient, type HttpClient } from './httpClient';
+import type { Order, Permission } from '../../domain/types';
 
 const enc = encodeURIComponent;
 
@@ -20,11 +21,25 @@ export function createHttpBackend(http: HttpClient): PosBackend {
       setStatus: (id, status, note, opts) => http.post(`/api/v1/pos/orders/${enc(id)}/status`, { status, note }, opts),
       accept: (id, opts) => http.post(`/api/v1/pos/orders/${enc(id)}/accept`, {}, opts),
       setPrep: (id, change, opts) => http.put(`/api/v1/pos/orders/${enc(id)}/preparation`, change, opts),
-      adjust: (id, change, opts) => http.post(`/api/v1/pos/orders/${enc(id)}/adjustments`, change, opts),
+      adjust: async (id, change, opts) => {
+        const result = await http.post<Order>(`/api/v1/pos/orders/${enc(id)}/adjustments`, change, opts);
+        if (change.adjustment.alloc.some((row) => row.method === 'gift') &&
+          (!result || result.id !== id || typeof result.paid !== 'boolean' || !Array.isArray(result.lines) || !Array.isArray(result.payments) || !Array.isArray(result.refunds) || !result.refunds.some((row) => row.key === change.adjustment.key))) {
+          throw new ApiError('server', 'Gift refund confirmation could not be verified. Check Sync before trying another refund.');
+        }
+        return result;
+      },
       setTables: (id, tables, opts) => http.put(`/api/v1/pos/orders/${enc(id)}/tables`, tables, opts),
     },
     payments: {
-      record: (orderId, payment, opts) => http.post(`/api/v1/pos/orders/${enc(orderId)}/payments`, payment, opts),
+      record: async (orderId, payment, opts) => {
+        const result = await http.post<Order>(`/api/v1/pos/orders/${enc(orderId)}/payments`, payment, opts);
+        if (payment.method === 'gift' && (!result || result.id !== orderId || typeof result.paid !== 'boolean' || !Number.isFinite(result.total) || !Array.isArray(result.lines) || !Array.isArray(result.payments) ||
+          !result.payments.some((row) => row.ref === payment.ref && row.method === 'gift' && row.amount === payment.amount && row.giftCardId === payment.giftCardId))) {
+          throw new ApiError('server', 'Gift payment confirmation could not be verified. Retry the same pending payment through Sync.');
+        }
+        return result;
+      },
     },
     catalog: {
       setSoldOut: (itemId, soldOut, opts) => http.put(`/api/v1/pos/items/${enc(itemId)}/sold-out`, { soldOut }, opts),
@@ -62,6 +77,14 @@ export function createHttpBackend(http: HttpClient): PosBackend {
       upsert: (c, opts) => http.put(`/api/v1/pos/catering/${enc(c.id)}`, c, opts),
     },
     giftCards: {
+      getBalance: async (customerId, opts) => {
+        const result = await http.get<GiftCardBalance>(`/api/v1/pos/customers/${enc(customerId)}/gift-card`, opts);
+        if (!result || typeof result.id !== 'string' || !result.id || typeof result.last4 !== 'string' || result.customerId !== customerId || !/^\d{4}$/.test(result.last4) ||
+          !Number.isSafeInteger(result.balance) || result.balance < 0) {
+          throw new ApiError('server', 'The gift card balance could not be verified.');
+        }
+        return result;
+      },
       issue: (req, opts) => http.post(`/gift-cards/v1`, req, opts),
       adjustBalance: (code, amount, reason, opts) =>
         http.post(`/gift-cards/v1/${enc(code.replace(/\s/g, ''))}/adjustments`, { amount, reason }, opts),
@@ -71,7 +94,7 @@ export function createHttpBackend(http: HttpClient): PosBackend {
         const result = await http.post<
           | {
               staff: PosSnapshot['staff'][number];
-              permissions: import('../../domain/types').Permission[];
+              permissions: Permission[];
             }
           | undefined
         >('/api/v1/pos/staff/verify-pin', { pin }, opts);

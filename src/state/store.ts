@@ -1,5 +1,6 @@
 import { getStaffToken } from '../services/http/staffSession';
 import { refreshCustomerLoyalty } from './actions/loyaltySync';
+import { reconcileGiftResponse, updateGiftPendingDialog } from './actions/giftCards';
 // The till's state container. Holds the working copy of shared records plus this device's session,
 // applies changes synchronously, persists them, and sends every business change to the backend as a command.
 import type { AppConfig } from '../config/env';
@@ -80,6 +81,7 @@ export class PosStore {
     const session = readJSON<Partial<SessionState>>(SESSION_KEY, {});
     this.st = initialState(session, deps.devices.initialStates());
     // Only re-render when the visible offline queue actually changes.
+    this.outbox.onDelivered((entry, response) => reconcileGiftResponse(this, entry, response));
     let previousEntries = this.outbox.pending;
     this.outbox.subscribe(() => {
       if (this.backend.kind === 'http') {
@@ -102,6 +104,7 @@ export class PosStore {
       const queue = this.queueFromOutbox();
       // Re-render when rejection or blocking changes, even if visible queue IDs do not.
       this.setState({ queue });
+      if (this.backend.kind === 'http') updateGiftPendingDialog(this);
     });
   }
 
