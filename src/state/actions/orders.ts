@@ -5,6 +5,8 @@ import { NEXT_STATUS } from '../../domain/policies';
 import type { HistoryEntry, Order, OrderActionMode, OrderAdjustment, StaffMember } from '../../domain/types';
 import { stamp, uid } from '../../lib/ids';
 import type { PosStore } from '../store';
+import { unresolvedGiftCommand } from './giftCards';
+import { OutboxStorageError } from '../../services/outbox';
 
 export const note = (o: Order, what: string): HistoryEntry[] => [...(o.history || []), { at: stamp(), what }];
 
@@ -64,6 +66,7 @@ export function applyOrderAction(store: PosStore, id: string, act: OrderActionRe
   const s = store.state,
     o = s.orders.find((x) => x.id === id);
   if (!o) return;
+  if (store.backend.kind === 'http' && unresolvedGiftCommand(store, id)) return store.say('Check Sync before adjusting this gift payment.');
   if ((o.refunds || []).some((r) => r.key === act.key)) return store.say('Already processed');
   const { menuById } = s.catalog;
   let lines = o.lines,
@@ -88,7 +91,7 @@ export function applyOrderAction(store: PosStore, id: string, act: OrderActionRe
     shift = s.shift,
     customers = s.customers;
   alloc
-    .filter((a) => a.method === 'gift')
+    .filter((a) => a.method === 'gift' && store.backend.kind !== 'http')
     .forEach((a) => {
       giftcards = giftcards.map((g) =>
         g.code.endsWith(a.giftLast4 || '')
@@ -146,6 +149,20 @@ export function applyOrderAction(store: PosStore, id: string, act: OrderActionRe
       `${label} · ${act.reason}${refundC ? ' · ' + methods : ''} · ${rec.by}${rec.approver ? ' (approved ' + rec.approver + ')' : ''}`,
     ),
   };
+  if (store.backend.kind === 'http' && alloc.some((row) => row.method === 'gift')) {
+    if (!s.online) return store.say('Connect to the server before returning gift card funds.');
+    try {
+      store.runCommandBatch(() => {
+        if (s.dlg?.kind === 'ordact') store.setState({ dlg: { ...s.dlg, processing: true, err: '' } });
+        store.send({ type: 'order.adjust', orderId: id, adjustment: rec, lines, total, status }, `${id} · gift refund awaiting confirmation`);
+      });
+      store.flushPersistence();
+    } catch (error) {
+      if (!(error instanceof OutboxStorageError)) throw error;
+      store.say('The refund could not be saved. No gift refund request was queued.');
+    }
+    return;
+  }
   store.setState({ orders: s.orders.map((x) => (x.id === id ? o2 : x)), giftcards, shift, customers, dlg: null });
   store.send({ type: 'order.adjust', orderId: id, adjustment: rec, lines, total, status });
   if (refundC)

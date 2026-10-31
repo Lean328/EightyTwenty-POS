@@ -127,6 +127,8 @@ export interface Payment {
   /** Idempotency reference — a retried terminal response with the same ref is never recorded twice. */
   ref: string;
   giftLast4?: string | null;
+  /** Authoritative backend card ID; last four digits are display only. */
+  giftCardId?: string | null;
   at?: string;
   by?: string;
   mode?: PaymentSplitMode;

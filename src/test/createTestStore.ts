@@ -22,7 +22,7 @@ export async function createTestStore(opts: { staffId?: string; backend?: PosBac
   const sent: PosCommand[] = [];
   const outbox = new Outbox(async (command, key) => {
     sent.push(command);
-    await dispatchCommand(backend, command, { idempotencyKey: key });
+    return dispatchCommand(backend, command, { idempotencyKey: key });
   });
   const store = new PosStore({ backend, devices: simulatedDevices, outbox, config: testConfig });
   await store.load();

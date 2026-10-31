@@ -5,6 +5,8 @@ import { totals, type Totals } from '../../domain/pricing';
 import type { Customer, GiftCard, Order, OrderLine, Payment } from '../../domain/types';
 import { nowHM, stamp, uid } from '../../lib/ids';
 import { OutboxStorageError } from '../../services/outbox';
+import { getStaffToken } from '../../services/http/staffSession';
+import { unresolvedGiftCommand } from './giftCards';
 import type { PosStore } from '../store';
 import type { PayDialog } from '../types';
 import { kickDrawer, note, printDocket, printReceipt } from './orders';
@@ -97,9 +99,17 @@ export type Tender = Omit<Payment, 'at' | 'by'>;
  * Idempotent: the tender's ref is the dialog's key, so a double tap or a retried terminal response is ignored.
  */
 export function takePayment(store: PosStore, tender: Tender): void {
-  if (store.backend.kind === 'http' && (tender.method === 'gift' || store.state.gift)) {
-    store.say('Gift cards at the till are not available yet. Choose another payment method.');
-    return;
+  if (store.backend.kind === 'http') {
+    const d = store.state.dlg;
+    if (d?.kind === 'pay' && d.forOrderId && unresolvedGiftCommand(store, d.forOrderId)) {
+      store.say('A gift payment or refund needs confirmation. Check Sync before taking more money.');
+      return;
+    }
+    if (tender.method === 'gift') return takeLiveGiftPayment(store, tender);
+    if (store.state.gift) {
+      store.say('Remove the gift card from Discounts and use Gift card in the payment screen.');
+      return;
+    }
   }
   if (!store.state.online && tender.method === 'cash') {
     try {
@@ -211,6 +221,7 @@ function recordTender(store: PosStore, tender: Tender): (() => void) | undefined
 export async function chargeCard(store: PosStore, tender: Tender): Promise<void> {
   const d = store.state.dlg;
   if (!d || d.kind !== 'pay' || d.status === 'processing') return;
+  if (d.forOrderId && unresolvedGiftCommand(store, d.forOrderId)) return store.say('Check Sync before taking another payment.');
   store.setState({ dlg: { ...d, status: 'processing', err: '' } });
   const fail = (err: string, extra: Partial<PayDialog> = {}) => {
     const cur = store.state.dlg;
@@ -239,4 +250,46 @@ export async function chargeCard(store: PosStore, tender: Tender): Promise<void>
   if (store.devices.simulated && cur.declineNext)
     return fail('Card declined by issuer — no charge was made. Ask for another card or method.', { declineNext: false });
   takePayment(store, tender);
+}
+
+/** Gift money moves on the server, so persist the request and wait for its acknowledged order. */
+function takeLiveGiftPayment(store: PosStore, tender: Tender): void {
+  const s = store.state, d = s.dlg;
+  if (!d || d.kind !== 'pay' || d.key !== tender.ref || d.status === 'processing') return;
+  const fail = (err: string) => store.setState({ dlg: { ...d, status: 'failed', err } });
+  if (!s.online) return fail('Gift cards require a connection to the server.');
+  if (!getStaffToken() || !(store.can('gift.redeem') || store.can('gift'))) return fail('Sign in with permission to redeem gift cards.');
+  if (s.gift) return fail('Remove the gift card from Discounts and use this payment screen.');
+  const existing = d.forOrderId ? s.orders.find((order) => order.id === d.forOrderId) : undefined;
+  if (d.forOrderId && !existing) return fail('The order is no longer available. Refresh orders.');
+  const customerId = existing?.customerId || (!existing ? s.customerId : undefined);
+  const gift = d.gift;
+  if (!gift?.id || !customerId || gift.customerId !== customerId || gift.id !== tender.giftCardId || gift.last4 !== tender.giftLast4) {
+    return fail('Select the customer and check their gift card balance again.');
+  }
+  const due = existing ? toC(existing.total) - paidC(existing) : toC(cartTotals(store).total);
+  if (!Number.isSafeInteger(tender.amount) || tender.amount <= 0 || tender.amount > due || tender.amount > toC(gift.balance) || tender.tip || tender.surcharge) {
+    return fail('The gift payment must fit the amount due and the checked balance, without tips or surcharge.');
+  }
+  if (!existing && !s.lines.length) return fail('Nothing to pay for yet.');
+  let createdId = '';
+  try {
+    store.runCommandBatch(() => {
+      let order = existing;
+      if (!order) {
+        order = cartToOrder(store).o;
+        createdId = order.id;
+        store.setState((state) => ({ orders: [order!, ...state.orders], lines: [], discount: null, gift: null, note: '', table: '', customerId: null, cartOpen: false }));
+        store.send({ type: 'order.create', order });
+      }
+      const payment: Payment = { ...tender, ...(s.shift ? { shiftId: s.shift.id } : {}), by: store.staff().name, at: stamp() };
+      store.setState({ dlg: { ...d, forOrderId: order.id, status: 'processing', err: '' } });
+      store.send({ type: 'payment.record', orderId: order.id, payment }, `${order.id} · gift ${fmtC(payment.amount)} awaiting confirmation`);
+    });
+    store.flushPersistence();
+    if (createdId) setTimeout(() => printDocket(store, createdId), 0);
+  } catch (error) {
+    if (!(error instanceof OutboxStorageError)) throw error;
+    store.say('Could not save this gift payment. No payment request was queued.');
+  }
 }

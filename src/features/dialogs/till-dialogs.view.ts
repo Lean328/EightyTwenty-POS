@@ -172,6 +172,15 @@ export function buildDiscountDialog(store: PosStore, d: DialogOf<'discount'>) {
     isDiscount: tab === 'discount',
     isPromo: tab === 'promo',
     isGift: tab === 'gift',
+    liveGift: store.backend.kind === 'http',
+    giftCustomerLabel: customer ? `Gift card for ${customer.name}` : 'Select a customer on the cart first.',
+    giftCanPay: !!customer && !!s.lines.length && s.online && !!store.backend.giftCards.getBalance && (store.can('gift.redeem') || store.can('gift')),
+    openGiftPayment: () => {
+      if (!customer || !s.lines.length || !s.online || !store.backend.giftCards.getBalance || !(store.can('gift.redeem') || store.can('gift'))) {
+        return set({ msg: 'Select a customer, add items and connect to the server before paying by gift card.', ok: false });
+      }
+      store.setState({ gift: null, dlg: { kind: 'pay', method: 'gift', mode: 'full', key: uid('P') } });
+    },
     isReward: tab === 'reward',
     code: d.code || '',
     custom: d.custom || '',
@@ -209,7 +218,7 @@ export function buildDiscountDialog(store: PosStore, d: DialogOf<'discount'>) {
     },
     applyGift: () => {
       const code = (d.code || '').replace(/\s/g, '');
-      if (store.backend.kind === 'http') return set({ msg: 'Gift cards at the till are not available yet.', ok: false });
+      if (store.backend.kind === 'http') return set({ msg: 'Use Gift card in the payment screen after selecting a customer.', ok: false });
       const g = s.giftcards.find((x) => x.code.replace(/\s/g, '').endsWith(code) && code.length >= 4);
       if (!g) return set({ msg: 'Gift card not found', ok: false });
       if (g.balance <= 0) return set({ msg: 'This gift card has no balance left', ok: false });

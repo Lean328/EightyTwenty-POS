@@ -27,7 +27,7 @@ export function buildOpsShell(store: PosStore) {
     catering: ['Catering', 'Enquiries, quotes and confirmed jobs'],
     customers: ['Customers', `${s.customers.length} profiles`],
     loyalty: ['Loyalty', 'Coffee card programme'],
-    gift: ['Gift cards', 'Issue, redeem and track balances'],
+    gift: ['Gift cards', store.backend.kind === 'http' ? 'Customer gift card payments and refunds' : 'Issue, redeem and track balances'],
     inventory: ['Inventory & menu', scopeName],
     reports: ['Reports', `${scopeName} · week to date`],
     staff: ['Staff & roles', 'Who can do what'],
@@ -83,7 +83,7 @@ export function buildOpsShell(store: PosStore) {
       label: 'Simulate ' + label.toLowerCase(),
       go: () => devSim(store, (m) => m.simulateIntake(store, kind, platform)),
     })),
-    primaryAction: primary[route] || null,
+    primaryAction: route === 'gift' && store.backend.kind === 'http' ? null : primary[route] || null,
     route,
     form: o.form ? buildFormView(store, o.form) : null,
   };

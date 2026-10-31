@@ -202,4 +202,21 @@ describe('outbox dependencies', () => {
     expect(reloaded.pending.find((entry) => entry.command.type === 'loyalty.balance')?.blockedBy).toBe(outbox.rejected[0].id);
   });
 
+  it('does not reject or resend a confirmed request when a delivery observer throws', async () => {
+    const transport = vi.fn().mockResolvedValue({ id: 'ORDER-1' });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const outbox = new Outbox(transport);
+      outbox.setOnline(false);
+      outbox.onDelivered(() => { throw new Error('Observer failed'); });
+      outbox.enqueue({ type: 'order.create', order: { id: 'ORDER-1' } } as PosCommand);
+      outbox.setOnline(true);
+      await outbox.flush();
+      expect(outbox.pending).toHaveLength(0);
+      expect(outbox.rejected).toHaveLength(0);
+      expect(transport).toHaveBeenCalledTimes(1);
+      expect(error).toHaveBeenCalledTimes(1);
+    } finally { error.mockRestore(); }
+  });
+
 });

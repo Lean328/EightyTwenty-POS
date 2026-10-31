@@ -32,6 +32,7 @@ import { uid } from '../../lib/ids';
 import { closeDialog } from '../../state/actions/auth';
 import { applyOrderAction, kickDrawer, openOrderAct, printReceipt } from '../../state/actions/orders';
 import { cartTotals, chargeCard, takePayment, type Tender } from '../../state/actions/payments';
+import { checkCustomerGiftCard, reviewRejectedGiftRequest, unresolvedGiftCommand } from '../../state/actions/giftCards';
 import { cashMove, closeShift, openShift } from '../../state/actions/shifts';
 import { resolveConflict, runSync, setOnline } from '../../state/actions/sync';
 import { clearTable, joinTable, moveTable, occupancy, seatReservation, separateTable } from '../../state/actions/tables';
@@ -88,16 +89,18 @@ export function buildPayDialog(store: PosStore, d: DialogOf<'pay'>) {
   const giftAmt = gift ? Math.min(toC(gift.balance), amount) : 0;
   const offline = !s.online,
     noShift = !s.shift;
-  const processing = d.status === 'processing',
+  const liveGift = store.backend.kind === 'http';
+  const giftBlocked = !!(liveGift && d.forOrderId && unresolvedGiftCommand(store, d.forOrderId));
+  const processing = d.status === 'processing' || !!d.giftChecking,
     failed = d.status === 'failed';
   const methodDefs: [typeof method, string, string][] = [
     ['cash', 'Cash', noShift ? 'open a shift first' : 'rounded to 5c'],
     ['card', 'Card', offline ? 'paused offline' : '+2.95%'],
     ['wallet', 'Apple Pay', offline ? 'paused offline' : '+2.95%'],
-    ['gift', 'Gift card', store.backend.kind === 'http' ? 'not available yet' : offline ? 'paused offline' : 'any balance'],
+    ['gift', 'Gift card', offline ? 'paused offline' : liveGift ? 'customer balance' : 'any balance'],
   ];
   const methods = methodDefs.map(([id, name, sub]) => {
-    const dis = processing || (offline && id !== 'cash') || (store.backend.kind === 'http' && id === 'gift');
+    const dis = processing || giftBlocked || (offline && id !== 'cash') || (liveGift && id === 'gift' && (!store.backend.giftCards.getBalance || !(store.can('gift.redeem') || store.can('gift'))));
     return {
       id,
       name,
@@ -159,7 +162,7 @@ export function buildPayDialog(store: PosStore, d: DialogOf<'pay'>) {
     .slice(0, 4);
   const charge = method === 'cash' ? cashDue : method === 'gift' ? giftAmt : amount + tipC + surcharge;
   const confirm = () => {
-    if (processing) return;
+    if (processing || (d.forOrderId && unresolvedGiftCommand(store, d.forOrderId))) return;
     const live = store.state;
     if (!forO && !live.lines.length) return set({ err: 'Nothing to pay for yet.' });
     if (!forO) {
@@ -190,7 +193,7 @@ export function buildPayDialog(store: PosStore, d: DialogOf<'pay'>) {
     if (method === 'gift') {
       if (!gift) return set({ err: 'Check a gift card first.' });
       if (giftAmt <= 0) return set({ err: 'This gift card has no balance.' });
-      return takePayment(store, { ...tender, amount: giftAmt, giftLast4: gift.last4 });
+      return takePayment(store, { ...tender, amount: giftAmt, giftLast4: gift.last4, giftCardId: gift.id, items: giftAmt < amount ? undefined : tender.items });
     }
     void chargeCard(store, { ...tender, tip: tipC, surcharge });
   };
@@ -230,6 +233,15 @@ export function buildPayDialog(store: PosStore, d: DialogOf<'pay'>) {
     isCash: method === 'cash',
     isCard: cardLike,
     isGift: method === 'gift',
+    liveGift,
+    giftChecking: !!d.giftChecking,
+    giftBlocked,
+    giftCustomerLabel: (() => {
+      const id = forO ? forO.customerId : s.customerId;
+      const customer = s.customers.find((row) => row.id === id);
+      return customer ? `Gift card for ${customer.name}` : 'Select a customer on the cart before paying by gift card.';
+    })(),
+    confirmDisabled: processing || giftBlocked || (liveGift && method === 'gift' && (offline || !gift?.id || giftAmt <= 0)),
     noShift,
     shiftOk: !noShift,
     openShift: () => store.setState({ dlg: { kind: 'shift', back: d } }),
@@ -252,7 +264,7 @@ export function buildPayDialog(store: PosStore, d: DialogOf<'pay'>) {
     giftCode: d.giftCode || '',
     setGiftCode: (e: Input) => set({ giftCode: e.target.value, err: '' }),
     checkGift: () => {
-      if (store.backend.kind === 'http') return set({ err: 'Gift cards at the till are not available yet.', gift: null });
+      if (liveGift) return checkCustomerGiftCard(store);
       const code = (d.giftCode || '').replace(/\s/g, '');
       const g = code.length >= 4 && s.giftcards.find((x) => x.code.replace(/\s/g, '').endsWith(code));
       if (!g) return set({ err: 'Gift card not found.', gift: null });
@@ -267,7 +279,7 @@ export function buildPayDialog(store: PosStore, d: DialogOf<'pay'>) {
     err: d.err || '',
     offline,
     confirmLabel: processing
-      ? `Waiting for terminal…${sim ? ' (simulated)' : ''}`
+      ? d.giftChecking ? 'Checking gift card…' : liveGift && method === 'gift' ? 'Confirming gift payment…' : `Waiting for terminal…${sim ? ' (simulated)' : ''}`
       : failed
         ? `Retry ${fmtC(charge)}`
         : method === 'cash'
@@ -535,14 +547,15 @@ export function buildOrderActionDialog(store: PosStore, d: DialogOf<'ordact'>) {
           : '',
     permNote: needsPerm && !store.can('orders.refund') ? 'Needs a manager PIN.' : '',
     err: d.err || '',
+    confirmBusy: !!d.processing || !!unresolvedGiftCommand(store, o.id),
     cta:
-      mode === 'cancel'
+      d.processing ? 'Confirming gift refund…' : mode === 'cancel'
         ? 'Cancel order'
         : mode === 'void'
           ? `Void ${units || ''} item${units === 1 ? '' : 's'}`.replace('  ', ' ')
           : `Refund ${fmtC(refundC)}`,
     confirm: () => {
-      if (block) return;
+      if (block || d.processing || unresolvedGiftCommand(store, o.id)) return;
       if (!d.reason) return set({ err: 'Choose a reason.' });
       if (mode === 'void' && !selValue) return set({ err: 'Choose the items to void.' });
       if (mode === 'refund' && refundC <= 0) return set({ err: 'Choose items or enter an amount.' });
@@ -652,6 +665,12 @@ export function buildSyncDialog(store: PosStore) {
         error: entry.lastError || 'The server rejected this change.',
         paymentReview: command.type === 'payment.record',
         canRetry: command.type === 'order.create',
+        canReviewGift: ((command.type === 'payment.record' && command.payment.method === 'gift') ||
+          (command.type === 'order.adjust' && command.adjustment.alloc.some((row) => row.method === 'gift'))) && store.backend.kind === 'http',
+        reviewGift: () => store.approve('orders.refund', 'Manager approval', `Verify the server order ${orderId} before resolving this gift request`, () => {
+          store.setState({ dlg: { kind: 'sync' } });
+          void reviewRejectedGiftRequest(store, entry.id);
+        }),
         retry: () => store.approve('orders.refund', 'Manager approval', `Review ${orderId} before retrying`, () => {
           const queued = store.outbox.retryRejectedOrder(entry.id);
           store.setState({ dlg: { kind: 'sync' } });

@@ -32,7 +32,7 @@ export interface RejectedEntry extends OutboxEntry {
   rejectedAt: string;
 }
 
-export type Transport = (command: PosCommand, idempotencyKey: string) => Promise<void>;
+export type Transport = (command: PosCommand, idempotencyKey: string) => Promise<unknown>;
 
 interface OutboxState {
   pending: OutboxEntry[];
@@ -62,6 +62,7 @@ export class Outbox {
   private flushing: Promise<FlushResult> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<() => void>();
+  private deliveredListeners = new Set<(entry: OutboxEntry, response: unknown) => void>();
   private readonly transport: Transport;
 
   constructor(transport: Transport) {
@@ -83,6 +84,12 @@ export class Outbox {
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
+  }
+
+  /** Acknowledged responses are separate from pending/rejected queue changes. */
+  onDelivered(listener: (entry: OutboxEntry, response: unknown) => void): () => void {
+    this.deliveredListeners.add(listener);
+    return () => this.deliveredListeners.delete(listener);
   }
 
   enqueue(command: PosCommand, label?: string): OutboxEntry {
@@ -128,7 +135,8 @@ export class Outbox {
   retryRejectedOrder(id: string): boolean {
     const rejected = this.state.rejected.find((entry) => entry.id === id);
     if (!rejected || rejected.command.type !== 'order.create' || this.state.pending.some((entry) => entry.id === id)) return false;
-    const { rejectedAt: _rejectedAt, ...entry } = rejected;
+    const { rejectedAt, ...entry } = rejected;
+    void rejectedAt;
     const next = { ...this.state, pending: [entry, ...this.state.pending] };
     if (!writeJSON(KEY, next)) {
       this.storageIssue = true;
@@ -171,12 +179,16 @@ export class Outbox {
       }
 
       try {
-        await this.transport(entry.command, entry.id);
+        const response = await this.transport(entry.command, entry.id);
         sent++;
         this.commit({
           pending: this.state.pending.filter((e) => e.id !== entry.id).map((e) => e.blockedBy === entry.id ? { ...e, blockedBy: undefined } : e),
           rejected: this.state.rejected.filter((e) => e.id !== entry.id),
         });
+        for (const listener of this.deliveredListeners) {
+          // An observer error must never turn an acknowledged payment into a rejected command.
+          try { listener(entry, response); } catch (error) { console.error('Could not reconcile an acknowledged command', error); }
+        }
       } catch (e) {
         const err = e instanceof ApiError ? e : new ApiError('unknown', e instanceof Error ? e.message : String(e));
         const attempts = entry.attempts + 1;

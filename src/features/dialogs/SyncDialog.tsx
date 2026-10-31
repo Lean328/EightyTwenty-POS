@@ -136,6 +136,9 @@ export function SyncDialog({ d }: { d: SyncDialogView }) {
                     Payment needs manager review. Check the order and payment in BOS before taking any further action.
                   </p>
                 ) : null}
+                {entry.canReviewGift ? (
+                  <button type="button" onClick={entry.reviewGift} style={{ marginTop: '8px' }}>Check server and resolve gift request</button>
+                ) : null}
                 {entry.canRetry ? (
                   <button type="button" onClick={entry.retry} style={{ marginTop: '8px' }}>Retry order after review</button>
                 ) : null}

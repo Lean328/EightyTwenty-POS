@@ -1,6 +1,14 @@
 import type { GiftView } from './guests.view';
 
 export function GiftCards({ o }: { o: GiftView }) {
+  if (o.liveGift) return (
+    <section style={{ padding: '20px', borderRadius: '16px', background: '#FFFCF7' }}>
+      <h2 style={{ marginTop: 0 }}>Use a customer's gift card</h2>
+      <p>Select the customer on the till, open Payment, choose Gift card, then check the current balance.</p>
+      <p>For refunds, open the original order. Funds return to the card used for that payment.</p>
+      <p>Issue and top up gift cards in BOS.</p>
+    </section>
+  );
   return (
     <>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: '12px' }}>

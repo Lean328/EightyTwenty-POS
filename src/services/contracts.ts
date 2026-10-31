@@ -120,13 +120,13 @@ export interface OrdersService {
     orderId: string,
     change: { adjustment: OrderAdjustment; lines: OrderLine[]; total: number; status: OrderStatus },
     opts?: RequestOptions,
-  ): Promise<void>;
+  ): Promise<Order | void>;
   setTables(orderId: string, tables: { table?: string; tables: string[]; cleared?: boolean }, opts?: RequestOptions): Promise<void>;
 }
 
 export interface PaymentsService {
-  /** Record a tender already captured (cash, gift card, or an approved terminal transaction). Idempotent on payment.ref. */
-  record(orderId: string, payment: Payment, opts?: RequestOptions): Promise<void>;
+  /** Record a captured tender; gift funds are debited atomically by the server. Idempotent on payment.ref. */
+  record(orderId: string, payment: Payment, opts?: RequestOptions): Promise<Order | void>;
 }
 
 // ---------- Products, menu and availability ----------
@@ -176,7 +176,16 @@ export interface IssueGiftCardRequest {
   issuedAt: string;
 }
 
+/** Live API balance is integer cents; legacy/demo GiftCard.balance uses dollars. */
+export interface GiftCardBalance {
+  id: string;
+  customerId: string;
+  last4: string;
+  balance: number;
+}
+
 export interface GiftCardsService {
+  getBalance?(customerId: string, opts?: RequestOptions): Promise<GiftCardBalance>;
   /** Issue a new card. The card number is assigned by the gift card provider, never by the till. */
   issue(req: IssueGiftCardRequest, opts?: RequestOptions): Promise<GiftCard>;
   /** Positive amount = top up / refund restored, negative = redeemed. Dollars. */

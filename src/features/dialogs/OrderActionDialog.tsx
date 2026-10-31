@@ -211,6 +211,7 @@ export function OrderActionDialog({ d }: { d: OrderActionDialogView }) {
             <button
               type="button"
               onClick={d.confirm}
+              disabled={d.confirmBusy}
               style={{
                 marginTop: '14px',
                 width: '100%',
